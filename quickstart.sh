@@ -50,9 +50,12 @@ RTC_DOMAIN="rtc.${DOMAIN}"
 if [[ -d "postgres/data" && "$(ls -A postgres/data 2>/dev/null)" ]] || \
    [[ -f "synapse/data/homeserver.yaml" ]]; then
     warn "Existing data found. quickstart.sh is for fresh installs."
-    warn "To redeploy from scratch, remove postgres/data, synapse/data, mas/data first."
-    read -p "Continue anyway? [y/N]: " _CONT
+    warn "Continuing will wipe postgres/data, mas/data, and generated configs."
+    warn "Your synapse/data media store and bridge configs are preserved."
+    read -p "Wipe and continue? [y/N]: " _CONT
     [[ "$_CONT" =~ ^[Yy]$ ]] || exit 0
+    sudo docker compose --profile single-machine --profile element-call down 2>/dev/null || true
+    sudo rm -rf postgres/data mas/data mas/certs caddy/data caddy/config
     echo ""
 fi
 
@@ -107,6 +110,11 @@ MAS_SECRET_KEY=${MAS_SECRET_KEY}
 LIVEKIT_SECRET=${LIVEKIT_SECRET}
 
 TZ=UTC
+
+# Suppress docker compose warnings for optional Authelia vars (not used in quickstart)
+AUTHELIA_JWT_SECRET=
+AUTHELIA_SESSION_SECRET=
+AUTHELIA_STORAGE_ENCRYPTION_KEY=
 EOF
 ok ".env written"
 
@@ -453,11 +461,11 @@ for i in {1..30}; do
 done
 ok "PostgreSQL ready"
 
-PROFILES="--profile single-machine"
-if $USE_ELEMENT_CALL; then PROFILES="${PROFILES} --profile element-call"; fi
+CORE_SERVICES="postgres synapse mas element element-admin caddy"
+if $USE_ELEMENT_CALL; then CORE_SERVICES="${CORE_SERVICES} livekit lk-jwt-service element-call"; fi
 
 info "Starting all services..."
-sudo docker compose ${PROFILES} up -d
+sudo docker compose --profile single-machine up -d ${CORE_SERVICES}
 echo ""
 
 # ── Summary ───────────────────────────────────────────────────────────────────
@@ -489,5 +497,5 @@ echo "To set up messaging bridges (WhatsApp, Signal, Telegram):"
 echo "  ./setup-bridges.sh"
 echo ""
 echo "Logs:  docker compose logs -f"
-echo "Stop:  docker compose ${PROFILES} down"
+echo "Stop:  docker compose --profile single-machine down"
 echo ""
