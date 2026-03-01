@@ -65,6 +65,43 @@ services:
     depends_on:
       - synapse
 
+  # LiveKit SFU — media server for Element Call (Optional - use profile "element-call" to enable)
+  livekit:
+    profiles:
+      - element-call
+    image: livekit/livekit-server:latest
+    container_name: matrix-livekit
+    restart: unless-stopped
+    ports:
+      - "7881:7881/tcp"
+      - "50100-50200:50100-50200/udp"
+    expose:
+      - "7880"
+    volumes:
+      - ./livekit/livekit.yaml:/livekit.yaml
+    command: --config /livekit.yaml
+    networks:
+      - matrix-network
+
+  # LiveKit JWT Service — issues LiveKit tokens to authenticated Matrix users
+  lk-jwt-service:
+    profiles:
+      - element-call
+    image: ghcr.io/element-hq/lk-jwt-service:latest
+    container_name: matrix-lk-jwt
+    restart: unless-stopped
+    expose:
+      - "8080"
+    environment:
+      - LIVEKIT_URL=wss://${RTC_DOMAIN}/livekit/sfu
+      - LIVEKIT_KEY=livekit-key
+      - LIVEKIT_SECRET=${LIVEKIT_SECRET}
+      - LIVEKIT_FULL_ACCESS_HOMESERVERS=${MATRIX_DOMAIN}
+    networks:
+      - matrix-network
+    depends_on:
+      - livekit
+
   # Redis for Authelia session storage
   redis:
     profiles:

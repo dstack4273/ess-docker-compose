@@ -56,6 +56,9 @@ read -p "Enter choice [1 or 2]: " DEPLOYMENT_TYPE
 if [[ "$DEPLOYMENT_TYPE" == "1" ]]; then
     DEPLOYMENT_MODE="local"
     COMPOSE_FILE="compose-variants/docker-compose.local.yml"
+    # Docker Compose v5+ resolves volume paths relative to the compose file's directory.
+    # --project-directory . overrides this so all paths resolve from the project root.
+    DOCKER_COMPOSE_CMD="sudo docker compose --project-directory ."
     echo -e "${GREEN}✓${NC} Selected: Local Testing Mode"
 elif [[ "$DEPLOYMENT_TYPE" == "2" ]]; then
     DEPLOYMENT_MODE="production"
@@ -98,7 +101,7 @@ if [[ -n "$EXISTING_DATA" ]]; then
 
     # Stop all containers and remove volumes to prevent PostgreSQL password conflicts
     echo -e "${YELLOW}Stopping containers and removing volumes...${NC}"
-    docker compose down -v 2>/dev/null || true
+    $DOCKER_COMPOSE_CMD -f ${COMPOSE_FILE} down -v 2>/dev/null || true
 
     # Surgical cleanup: Only remove postgres/data (source of password mismatch)
     # Preserve synapse/data/homeserver.yaml (keeps custom mail config, etc.)
@@ -154,6 +157,29 @@ else
 fi
 echo ""
 
+# ============================================================================
+# ELEMENT CALL SELECTION
+# ============================================================================
+echo -e "${CYAN}Enable Element Call (video/voice calling)?${NC}"
+echo ""
+echo -e "  ${GREEN}Yes)${NC} Add LiveKit-based video/voice calls"
+echo -e "       → Adds livekit + lk-jwt-service containers"
+echo -e "       → Element Web will show video/voice call button"
+echo -e "       → Requires ports TCP 7881 and UDP 50100-50200 open to the internet"
+echo ""
+echo -e "  ${GREEN}No)${NC}  Text-only Matrix stack (default)"
+echo ""
+read -p "Enable Element Call? [y/N]: " INCLUDE_ELEMENT_CALL
+
+if [[ "$INCLUDE_ELEMENT_CALL" =~ ^[Yy]$ ]]; then
+    USE_ELEMENT_CALL=true
+    echo -e "${GREEN}✓${NC} Element Call will be enabled"
+else
+    USE_ELEMENT_CALL=false
+    echo -e "${GREEN}✓${NC} Element Call disabled"
+fi
+echo ""
+
 # Function to generate secure random string (32 bytes base64)
 generate_secret() {
     openssl rand -base64 32 | tr -d "=+/" | cut -c1-32
@@ -193,16 +219,24 @@ if [[ "$DEPLOYMENT_MODE" == "local" ]]; then
     ADMIN_DOMAIN="admin.example.test"
     AUTH_DOMAIN="auth.example.test"
     AUTHELIA_DOMAIN="authelia.example.test"
+    RTC_DOMAIN="rtc.example.test"
 
     echo -e "${CYAN}Local Testing Configuration:${NC}"
     echo -e "  Matrix API:  https://${MATRIX_DOMAIN}"
     echo -e "  Element Web: https://${ELEMENT_DOMAIN}"
     echo -e "  MAS Auth:    https://${AUTH_DOMAIN}"
     echo -e "  Authelia:    https://${AUTHELIA_DOMAIN}"
+    if [[ "$USE_ELEMENT_CALL" == true ]]; then
+        echo -e "  Element Call: https://${RTC_DOMAIN}"
+    fi
     echo ""
+    HOSTS_DOMAINS="${MATRIX_DOMAIN} ${ELEMENT_DOMAIN} ${AUTH_DOMAIN} ${AUTHELIA_DOMAIN}"
+    if [[ "$USE_ELEMENT_CALL" == true ]]; then
+        HOSTS_DOMAINS="${HOSTS_DOMAINS} ${RTC_DOMAIN}"
+    fi
     echo -e "${YELLOW}⚠ Remember to add these to /etc/hosts:${NC}"
-    echo -e "  127.0.0.1  ${MATRIX_DOMAIN} ${ELEMENT_DOMAIN} ${AUTH_DOMAIN} ${AUTHELIA_DOMAIN}"
-    echo -e "  ::1        ${MATRIX_DOMAIN} ${ELEMENT_DOMAIN} ${AUTH_DOMAIN} ${AUTHELIA_DOMAIN}"
+    echo -e "  127.0.0.1  ${HOSTS_DOMAINS}"
+    echo -e "  ::1        ${HOSTS_DOMAINS}"
     echo ""
     echo -e "${BLUE}ℹ Note: IPv6 entry (::1) required to prevent DNS lookups bypassing /etc/hosts${NC}"
     echo ""
@@ -243,6 +277,13 @@ else
     AUTHELIA_SUBDOMAIN=${AUTHELIA_SUBDOMAIN:-authelia}
     AUTHELIA_DOMAIN="${AUTHELIA_SUBDOMAIN}.${DOMAIN_BASE}"
 
+    # RTC subdomain (Element Call)
+    if [[ "$USE_ELEMENT_CALL" == true ]]; then
+        read -p "Enter RTC subdomain for Element Call [default: rtc]: " RTC_SUBDOMAIN
+        RTC_SUBDOMAIN=${RTC_SUBDOMAIN:-rtc}
+        RTC_DOMAIN="${RTC_SUBDOMAIN}.${DOMAIN_BASE}"
+    fi
+
     echo ""
     echo -e "${CYAN}Backend Server Addresses (for Caddyfile):${NC}"
     echo -e "  ${YELLOW}Enter IP addresses or hostnames${NC}"
@@ -267,6 +308,9 @@ else
     echo -e "  Element:           https://${ELEMENT_DOMAIN}"
     echo -e "  MAS:               https://${AUTH_DOMAIN}"
     echo -e "  Authelia:          https://${AUTHELIA_DOMAIN}"
+    if [[ "$USE_ELEMENT_CALL" == true ]]; then
+        echo -e "  Element Call RTC:  https://${RTC_DOMAIN}"
+    fi
     echo -e "  Matrix Backend:    ${MATRIX_SERVER_IP}"
     echo -e "  Authelia Backend:  ${AUTHELIA_SERVER_IP}"
     echo ""
@@ -300,6 +344,11 @@ mkdir -p bridges/{telegram,whatsapp,signal}/config
 print_status "Directory structure created"
 echo ""
 
+# Step 1.5 (cont.): Create livekit directory if needed
+if [[ "$USE_ELEMENT_CALL" == true ]]; then
+    mkdir -p livekit
+fi
+
 # Step 2: Generate secure secrets
 echo -e "${BLUE}[2/12] Generating secure secrets...${NC}"
 POSTGRES_PASSWORD=$(generate_secret)
@@ -308,6 +357,9 @@ AUTHELIA_SESSION_SECRET=$(generate_secret)
 AUTHELIA_STORAGE_ENCRYPTION_KEY=$(generate_secret)
 MAS_SECRET_KEY=$(generate_hex_secret)  # MAS requires hex format
 SYNAPSE_SHARED_SECRET=$(generate_secret)
+if [[ "$USE_ELEMENT_CALL" == true ]]; then
+    LIVEKIT_SECRET=$(generate_secret)
+fi
 print_status "Secrets generated"
 echo ""
 
@@ -357,6 +409,16 @@ if [[ "$DEPLOYMENT_MODE" == "production" ]]; then
 MATRIX_SERVER_IP=${MATRIX_SERVER_IP}
 AUTHELIA_SERVER_IP=${AUTHELIA_SERVER_IP}
 LETSENCRYPT_EMAIL=${LETSENCRYPT_EMAIL}
+EOF
+fi
+
+# Add Element Call variables
+if [[ "$USE_ELEMENT_CALL" == true ]]; then
+    cat >> .env << EOF
+
+# Element Call (LiveKit)
+RTC_DOMAIN=${RTC_DOMAIN}
+LIVEKIT_SECRET=${LIVEKIT_SECRET}
 EOF
 fi
 
@@ -663,7 +725,7 @@ clients:
       - 'io.element.app:/callback'
 
   # Element Admin (public - for admin UI)
-  - client_id: '01ADMIN000000000000000000'
+  - client_id: '01ADMN00000000000000000000'
     client_auth_method: none
     redirect_uris:
       - 'https://${ADMIN_DOMAIN}/'
@@ -684,6 +746,22 @@ echo ""
 
 # Step 11: Create Element Web configuration
 echo -e "${BLUE}[11/13] Creating Element Web configuration...${NC}"
+
+# Build Element Call block if enabled
+if [[ "$USE_ELEMENT_CALL" == true ]]; then
+    ELEMENT_CALL_FEATURES=',
+        "feature_element_call_video_rooms": true'
+    ELEMENT_CALL_BLOCK=',
+    "element_call": {
+        "url": "https://call.element.io",
+        "participant_limit": 8,
+        "brand": "Element Call"
+    }'
+else
+    ELEMENT_CALL_FEATURES=''
+    ELEMENT_CALL_BLOCK=''
+fi
+
 cat > element/config/config.json << EOF
 {
     "default_server_config": {
@@ -708,15 +786,34 @@ cat > element/config/config.json << EOF
         ]
     },
     "features": {
-        "feature_oidc_aware_navigation": true
+        "feature_oidc_aware_navigation": true${ELEMENT_CALL_FEATURES}
     },
     "default_server_name": "${MATRIX_DOMAIN}",
     "disable_custom_urls": false,
-    "disable_guests": true
+    "disable_guests": true${ELEMENT_CALL_BLOCK}
 }
 EOF
 print_status "Element Web configuration created"
 echo ""
+
+# Step 11.5: Create LiveKit config (if Element Call enabled)
+if [[ "$USE_ELEMENT_CALL" == true ]]; then
+    echo -e "${BLUE}[11.5/13] Creating LiveKit configuration...${NC}"
+    cat > livekit/livekit.yaml << EOF
+port: 7880
+
+rtc:
+  tcp_port: 7881
+  port_range_start: 50100
+  port_range_end: 50200
+  use_external_ip: true
+
+keys:
+  livekit-key: ${LIVEKIT_SECRET}
+EOF
+    print_status "LiveKit configuration created"
+    echo ""
+fi
 
 # Step 12: Generate Synapse configuration
 echo -e "${BLUE}[12/13] Generating Synapse configuration...${NC}"
@@ -743,13 +840,24 @@ cp synapse/data/homeserver.yaml synapse/data/homeserver.yaml.bak 2>/dev/null || 
 # Remove old database configuration (both SQLite and PostgreSQL)
 sed -i '/^database:/,/^[^ ]/{ /^database:/d; /^[^ ]/!d }' synapse/data/homeserver.yaml
 
-# Remove old MAS integration section if present
+# Remove old MAS integration sections (msc3861 removed in Synapse 1.137+)
 sed -i '/^# MAS Integration/,/^[^ ]/{ /^# MAS Integration/d; /^[^ ]/!d }' synapse/data/homeserver.yaml
 sed -i '/^experimental_features:/,/^[^ ]/{ /^experimental_features:/d; /^[^ ]/!d }' synapse/data/homeserver.yaml
+# Remove old stable MAS config block (so we can re-add with correct secret)
+sed -i '/^matrix_authentication_service:/,/^[^ ]/{ /^matrix_authentication_service:/d; /^[^ ]/!d }' synapse/data/homeserver.yaml
+# Remove stale MAS-related comment lines
+sed -i '/^# Matrix Authentication Service (MAS) integration/d' synapse/data/homeserver.yaml
+sed -i '/^# Replaces deprecated experimental_features/d' synapse/data/homeserver.yaml
+sed -i '/^# Experimental features$/d' synapse/data/homeserver.yaml
 
 # Remove old enable_registration if present
 sed -i '/^# Enable registration/d' synapse/data/homeserver.yaml
 sed -i '/^enable_registration:/d' synapse/data/homeserver.yaml
+
+# Remove old Element Call rate limit config if present (prevents duplication on re-run)
+sed -i '/^# Element Call: delayed event rate limiting/d' synapse/data/homeserver.yaml
+sed -i '/^max_event_delay_duration:/d' synapse/data/homeserver.yaml
+sed -i '/^rc_delayed_event_mgmt:/,/^[^ ]/{ /^rc_delayed_event_mgmt:/d; /^[^ ]/!d }' synapse/data/homeserver.yaml
 
 # Add PostgreSQL and MAS config (always with current passwords)
 cat >> synapse/data/homeserver.yaml << EOF
@@ -769,19 +877,341 @@ database:
 # Enable registration (disabled when using MAS/OAuth delegation)
 enable_registration: false
 
-# MAS Integration (MSC3861 - OAuth delegation)
-experimental_features:
-  msc3861:
-    enabled: true
-    issuer: https://${AUTH_DOMAIN}/
-    client_id: 0000000000000000000SYNAPSE
-    client_auth_method: client_secret_basic
-    client_secret: ${SYNAPSE_CLIENT_SECRET}
-    admin_token: ${SYNAPSE_SHARED_SECRET}
+# MAS Integration (Synapse 1.136+ stable config — replaces deprecated experimental_features.msc3861)
+matrix_authentication_service:
+  enabled: true
+  endpoint: 'http://mas:8080'
+  secret: '${SYNAPSE_SHARED_SECRET}'
 EOF
+
+# Add Element Call MSC features if enabled (separate from MAS config)
+if [[ "$USE_ELEMENT_CALL" == true ]]; then
+    cat >> synapse/data/homeserver.yaml << EOF
+
+# Element Call MSC features
+experimental_features:
+  msc3266_enabled: true
+  msc4222_enabled: true
+  msc4140_enabled: true
+
+# Element Call: delayed event rate limiting
+max_event_delay_duration: 24h
+
+rc_delayed_event_mgmt:
+  per_second: 1
+  burst_count: 20
+EOF
+fi
 
 print_status "Database configuration updated with current credentials"
 echo ""
+
+# Step 12.5: Generate local Caddyfile (only for local mode)
+if [[ "$DEPLOYMENT_MODE" == "local" ]]; then
+    echo -e "${BLUE}[12.5/13] Generating local Caddyfile...${NC}"
+
+    # Pre-build JSON blobs for the local Caddyfile (single-line, no literal \n)
+    if [[ "$USE_ELEMENT_CALL" == true ]]; then
+        LOCAL_WELLKNOWN_JSON="{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\"},\"m.authentication\":{\"issuer\":\"https://${AUTH_DOMAIN}/\"},\"org.matrix.msc4143.rtc_foci\":[{\"type\":\"livekit\",\"livekit_service_url\":\"https://${RTC_DOMAIN}/livekit/jwt\"}]}"
+        LOCAL_ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${MATRIX_DOMAIN}\"}},\"default_server_name\":\"${MATRIX_DOMAIN}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true,\"feature_element_call_video_rooms\":true},\"element_call\":{\"url\":\"https://call.element.io\",\"participant_limit\":8,\"brand\":\"Element Call\"}}"
+    else
+        LOCAL_WELLKNOWN_JSON="{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\"},\"m.authentication\":{\"issuer\":\"https://${AUTH_DOMAIN}/\"}}"
+        LOCAL_ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${MATRIX_DOMAIN}\"}},\"default_server_name\":\"${MATRIX_DOMAIN}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true}}"
+    fi
+
+    cat > caddy/Caddyfile << 'CADDYEOF'
+# Local Development Caddyfile for Matrix Stack
+# Uses self-signed certificates for local HTTPS testing
+# Auto-generated by deploy.sh — do not edit manually
+
+{
+    # Use local CA for self-signed certificates
+    local_certs
+    # Enable admin API
+    admin 0.0.0.0:2019
+}
+CADDYEOF
+
+    # Append Matrix homeserver block (variables expanded)
+    cat >> caddy/Caddyfile << EOF
+
+# =========================
+# Matrix Homeserver (Synapse)
+# =========================
+${MATRIX_DOMAIN}:443 {
+    # TLS with self-signed cert
+    tls internal
+
+    # Well-known client endpoint
+    @wk path /.well-known/matrix/client
+    handle @wk {
+        header Content-Type application/json
+        header Access-Control-Allow-Origin "*"
+        respond \`${LOCAL_WELLKNOWN_JSON}\` 200
+    }
+
+    # Well-known server endpoint (federation)
+    @wk_server path /.well-known/matrix/server
+    handle @wk_server {
+        header Content-Type application/json
+        respond \`{"m.server":"${MATRIX_DOMAIN}:443"}\` 200
+    }
+
+    # Rendezvous endpoints for QR code login (MSC4108)
+    @rendezvous path_regexp rendezvous ^/_matrix/client/(unstable|v1)/org\.matrix\.(msc3886|msc4108)/rendezvous.*\$
+    handle @rendezvous {
+        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        header Access-Control-Allow-Headers "Authorization, Content-Type, Accept, If-Match, If-None-Match"
+        header Vary "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+        encode {
+        }
+        reverse_proxy synapse:8008 {
+            header_down -Access-Control-Allow-Origin
+            header_down -Access-Control-Allow-Methods
+            header_down -Access-Control-Allow-Headers
+            header_down -Vary
+        }
+    }
+
+    # Client versions endpoint with CORS
+    @versions path /_matrix/client/versions
+    handle @versions {
+        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Methods "GET, OPTIONS"
+        header Access-Control-Allow-Headers "Authorization, Content-Type, Accept"
+        header Vary "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+        reverse_proxy synapse:8008 {
+            header_down -Access-Control-Allow-Origin
+            header_down -Access-Control-Allow-Methods
+            header_down -Access-Control-Allow-Headers
+            header_down -Vary
+        }
+    }
+
+    # CORS preflight for auth metadata
+    @auth_preflight {
+        method OPTIONS
+        path /_matrix/client/unstable/org.matrix.msc2965/auth_metadata
+    }
+    handle @auth_preflight {
+        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Methods "GET, OPTIONS"
+        header Access-Control-Allow-Headers "Authorization, Content-Type, Accept"
+        header Access-Control-Max-Age "86400"
+        respond 204
+    }
+
+    # CORS preflight for all Matrix API
+    @preflight {
+        method OPTIONS
+        path_regexp matrix ^/_matrix/.*\$
+    }
+    handle @preflight {
+        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        header Access-Control-Allow-Headers "Authorization, Content-Type, Accept"
+        header Access-Control-Max-Age "86400"
+        respond 204
+    }
+
+    # MAS compat endpoints (login/logout/refresh) with CORS
+    @compat path \\
+        /_matrix/client/v3/login* \\
+        /_matrix/client/v3/logout* \\
+        /_matrix/client/v3/refresh* \\
+        /_matrix/client/r0/login* \\
+        /_matrix/client/r0/logout* \\
+        /_matrix/client/r0/refresh*
+    handle @compat {
+        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        header Access-Control-Allow-Headers "Authorization, Content-Type, Accept"
+        header Vary "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+        reverse_proxy mas:8080 {
+            header_down -Access-Control-Allow-Origin
+            header_down -Access-Control-Allow-Methods
+            header_down -Access-Control-Allow-Headers
+            header_down -Vary
+        }
+    }
+
+    # Everything else under /_matrix → Synapse with CORS
+    @matrix_rest path_regexp matrix ^/_matrix/.*\$
+    handle @matrix_rest {
+        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        header Access-Control-Allow-Headers "Authorization, Content-Type, Accept"
+        header Vary "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+        reverse_proxy synapse:8008 {
+            header_down -Access-Control-Allow-Origin
+            header_down -Access-Control-Allow-Methods
+            header_down -Access-Control-Allow-Headers
+            header_down -Vary
+        }
+    }
+
+    # Default: everything else → Synapse
+    handle {
+        reverse_proxy synapse:8008
+    }
+}
+
+# =========================
+# Matrix Authentication Service (MAS)
+# =========================
+${AUTH_DOMAIN}:443 {
+    tls internal
+
+    # OIDC Discovery
+    @disco path /.well-known/openid-configuration
+    handle @disco {
+        header ?Access-Control-Allow-Origin "*"
+        header ?Access-Control-Allow-Methods "GET, OPTIONS"
+        header ?Access-Control-Allow-Headers "*"
+        reverse_proxy mas:8080
+    }
+
+    # Dynamic Client Registration: CORS preflight
+    @reg_opts {
+        method OPTIONS
+        path /oauth2/registration
+    }
+    handle @reg_opts {
+        header ?Access-Control-Allow-Origin "*"
+        header ?Access-Control-Allow-Methods "POST, OPTIONS"
+        header ?Access-Control-Allow-Headers "*"
+        respond 204
+    }
+
+    # Dynamic Client Registration (POST)
+    @reg path /oauth2/registration
+    route @reg {
+        header ?Access-Control-Allow-Origin "*"
+        header ?Access-Control-Allow-Methods "POST, OPTIONS"
+        header ?Access-Control-Allow-Headers "*"
+        reverse_proxy mas:8080
+    }
+
+    # JWKS preflight
+    @jwks_opts {
+        method OPTIONS
+        path /oauth2/keys.json
+    }
+    handle @jwks_opts {
+        header ?Access-Control-Allow-Origin "*"
+        header ?Access-Control-Allow-Methods "GET, OPTIONS"
+        header ?Access-Control-Allow-Headers "*"
+        respond 204
+    }
+
+    # Map keys.json → /oauth2/jwks (MAS naming)
+    @jwksjson path /oauth2/keys.json
+    route @jwksjson {
+        header ?Access-Control-Allow-Origin "*"
+        header ?Access-Control-Allow-Methods "GET, OPTIONS"
+        header ?Access-Control-Allow-Headers "*"
+        uri replace /oauth2/keys.json /oauth2/jwks
+        reverse_proxy mas:8080
+    }
+
+    # Generic OAuth2 endpoints
+    @oauth path /oauth2/*
+    route @oauth {
+        header ?Access-Control-Allow-Origin "*"
+        header ?Access-Control-Allow-Methods "GET, OPTIONS, POST"
+        header ?Access-Control-Allow-Headers "*"
+        reverse_proxy mas:8080
+    }
+
+    # Account portal
+    handle_path /account/* {
+        reverse_proxy mas:8080
+    }
+
+    # Authelia endpoints (proxy to authelia)
+    handle_path /authelia/* {
+        reverse_proxy authelia:9091
+    }
+
+    # Fallback: everything else to MAS
+    handle {
+        reverse_proxy mas:8080
+    }
+
+    # Add CORS on error responses
+    handle_errors {
+        header ?Access-Control-Allow-Origin "*"
+        header ?Access-Control-Allow-Headers "*"
+        header ?Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+    }
+}
+
+# =========================
+# Authelia SSO
+# =========================
+${AUTHELIA_DOMAIN}:443 {
+    tls internal
+
+    reverse_proxy authelia:9091
+}
+
+# =========================
+# Element Web Client
+# =========================
+${ELEMENT_DOMAIN}:443 {
+    tls internal
+
+    # Serve config.json with proper settings
+    @cfg path /config.json
+    handle @cfg {
+        header Content-Type application/json
+        header Cache-Control no-store
+        respond \`${LOCAL_ELEMENT_CFG_JSON}\` 200
+    }
+
+    # Everything else to Element container
+    handle {
+        reverse_proxy element:80
+    }
+}
+
+# =========================
+# Element Admin
+# =========================
+${ADMIN_DOMAIN}:443 {
+    tls internal
+
+    handle {
+        reverse_proxy element-admin:80
+    }
+}
+EOF
+
+    # Append Element Call block if enabled
+    if [[ "$USE_ELEMENT_CALL" == true ]]; then
+        cat >> caddy/Caddyfile << EOF
+
+# =========================
+# Element Call (LiveKit)
+# =========================
+${RTC_DOMAIN}:443 {
+    tls internal
+
+    handle_path /livekit/jwt* {
+        reverse_proxy lk-jwt-service:8080
+    }
+
+    handle_path /livekit/sfu* {
+        reverse_proxy livekit:7880
+    }
+}
+EOF
+    fi
+
+    print_status "Local Caddyfile generated: caddy/Caddyfile"
+    echo ""
+fi
 
 # Step 13: Fix directory permissions
 echo -e "${BLUE}[13/14] Fixing directory permissions...${NC}"
@@ -827,12 +1257,21 @@ if [[ "$USE_AUTHELIA" == true ]]; then
     echo ""
 fi
 
-# Start remaining services
+# Build compose profile flags
+COMPOSE_PROFILES=""
 if [[ "$USE_AUTHELIA" == true ]]; then
-    print_info "Starting all services (with Authelia)..."
-    $DOCKER_COMPOSE_CMD -f ${COMPOSE_FILE} --profile authelia up -d
+    COMPOSE_PROFILES="${COMPOSE_PROFILES} --profile authelia"
+fi
+if [[ "$USE_ELEMENT_CALL" == true ]]; then
+    COMPOSE_PROFILES="${COMPOSE_PROFILES} --profile element-call"
+fi
+
+# Start remaining services
+if [[ -n "$COMPOSE_PROFILES" ]]; then
+    print_info "Starting all services (profiles:${COMPOSE_PROFILES})..."
+    $DOCKER_COMPOSE_CMD -f ${COMPOSE_FILE} ${COMPOSE_PROFILES} up -d
 else
-    print_info "Starting all services (without Authelia)..."
+    print_info "Starting all services..."
     $DOCKER_COMPOSE_CMD -f ${COMPOSE_FILE} up -d
 fi
 echo ""
@@ -893,6 +1332,16 @@ if [[ "$DEPLOYMENT_MODE" == "production" ]]; then
 
     # Generate production Caddyfile
     print_info "Generating Caddyfile for Caddy machine..."
+
+    # Pre-build conditional JSON blobs for the Caddyfile
+    if [[ "$USE_ELEMENT_CALL" == true ]]; then
+        PROD_WELLKNOWN_JSON="{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\"},\"m.authentication\":{\"issuer\":\"https://${AUTH_DOMAIN}/\"},\"org.matrix.msc4143.rtc_foci\":[{\"type\":\"livekit\",\"livekit_service_url\":\"https://${RTC_DOMAIN}/livekit/jwt\"}]}"
+        PROD_ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${MATRIX_DOMAIN}\"}},\"default_server_name\":\"${MATRIX_DOMAIN}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true,\"feature_element_call_video_rooms\":true},\"element_call\":{\"url\":\"https://call.element.io\",\"participant_limit\":8,\"brand\":\"Element Call\"}}"
+    else
+        PROD_WELLKNOWN_JSON="{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\"},\"m.authentication\":{\"issuer\":\"https://${AUTH_DOMAIN}/\"}}"
+        PROD_ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${MATRIX_DOMAIN}\"}},\"default_server_name\":\"${MATRIX_DOMAIN}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true}}"
+    fi
+
     cat > caddy/Caddyfile.production << EOF
 # Production Caddyfile for Matrix Stack
 # Deploy this on your SSL termination machine
@@ -912,7 +1361,7 @@ ${MATRIX_DOMAIN} {
     @wk path /.well-known/matrix/client
     handle @wk {
         header Content-Type application/json
-        respond \`{"m.homeserver":{"base_url":"https://${MATRIX_DOMAIN}"},"m.authentication":{"issuer":"https://${AUTH_DOMAIN}/"}}\` 200
+        respond \`${PROD_WELLKNOWN_JSON}\` 200
     }
 
     # Well-known server endpoint (federation)
@@ -1026,7 +1475,7 @@ ${ELEMENT_DOMAIN} {
     handle @cfg {
         header Content-Type application/json
         header Cache-Control no-store
-        respond \`{"default_server_config":{"m.homeserver":{"base_url":"https://${MATRIX_DOMAIN}","server_name":"${MATRIX_DOMAIN}"}},"default_server_name":"${MATRIX_DOMAIN}","disable_custom_urls":false,"disable_guests":true,"features":{"feature_oidc_aware_navigation":true}}\` 200
+        respond \`${PROD_ELEMENT_CFG_JSON}\` 200
     }
 
     handle {
@@ -1044,6 +1493,25 @@ ${ADMIN_DOMAIN} {
     }
 }
 EOF
+
+    # Append Element Call block to production Caddyfile if enabled
+    if [[ "$USE_ELEMENT_CALL" == true ]]; then
+        cat >> caddy/Caddyfile.production << EOF
+
+# =========================
+# Element Call (LiveKit)
+# =========================
+${RTC_DOMAIN} {
+    handle_path /livekit/jwt* {
+        reverse_proxy ${MATRIX_SERVER_IP}:8082
+    }
+
+    handle_path /livekit/sfu* {
+        reverse_proxy ${MATRIX_SERVER_IP}:7880
+    }
+}
+EOF
+    fi
 
     print_status "Production Caddyfile created: caddy/Caddyfile.production"
     echo ""
@@ -1078,6 +1546,9 @@ if [[ "$DEPLOYMENT_MODE" == "local" ]]; then
     echo -e "  • MAS (Auth):   https://${AUTH_DOMAIN}"
     if [[ "$USE_AUTHELIA" == true ]]; then
         echo -e "  • Authelia:     https://${AUTHELIA_DOMAIN}"
+    fi
+    if [[ "$USE_ELEMENT_CALL" == true ]]; then
+        echo -e "  • LiveKit JWT:  https://${RTC_DOMAIN}/livekit/jwt"
     fi
     echo -e "  • Caddy Admin:  http://localhost:2019"
     echo ""
@@ -1140,11 +1611,17 @@ else
     echo -e "   • ${ELEMENT_DOMAIN}"
     echo -e "   • ${AUTH_DOMAIN}"
     echo -e "   • ${AUTHELIA_DOMAIN}"
+    if [[ "$USE_ELEMENT_CALL" == true ]]; then
+        echo -e "   • ${RTC_DOMAIN}"
+    fi
     echo ""
     echo -e "${CYAN}4. Configure Firewall:${NC}"
     echo -e "   Matrix server (${MATRIX_SERVER_IP}): Allow from Caddy"
     echo -e "   Authelia server (${AUTHELIA_SERVER_IP}): Allow from Caddy and Matrix"
     echo -e "   Caddy: Allow ports 80/443 from internet"
+    if [[ "$USE_ELEMENT_CALL" == true ]]; then
+        echo -e "   Matrix server (${MATRIX_SERVER_IP}): Allow port 7881/TCP and 50100-50200/UDP from internet (WebRTC)"
+    fi
     echo ""
     echo -e "${BLUE}Authelia Login Credentials:${NC}"
     echo -e "  • Username:     admin"
@@ -1156,6 +1633,9 @@ else
     echo -e "  • Matrix API:   https://${MATRIX_DOMAIN}"
     echo -e "  • MAS (Auth):   https://${AUTH_DOMAIN}"
     echo -e "  • Authelia:     https://${AUTHELIA_DOMAIN}"
+    if [[ "$USE_ELEMENT_CALL" == true ]]; then
+        echo -e "  • LiveKit JWT:  https://${RTC_DOMAIN}/livekit/jwt"
+    fi
     echo ""
 fi
 echo -e "${BLUE}Useful Commands:${NC}"

@@ -7,6 +7,7 @@ authelia_private.pem
 mas-signing.key
 
 # Generated configuration files (contain secrets)
+livekit/livekit.yaml
 authelia/config/configuration.yml
 authelia/config/users_database.yml
 authelia/config/notification.txt
