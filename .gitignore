@@ -19,6 +19,9 @@ synapse/data/homeserver.yaml.bak
 synapse/data/*.signing.key
 synapse/data/*.log.config
 
+# Appservice registrations (contain tokens, created manually per deployment)
+appservices/
+
 # Data directories
 postgres/data/
 synapse/data/
