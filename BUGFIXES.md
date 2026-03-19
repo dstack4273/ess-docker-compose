@@ -78,6 +78,7 @@ http:
         - name: graphql
           playground: true
         - name: assets    # ← Critical: This is required!
+        - name: adminapi  # ← Required for Element Admin panel
       binds:
         - address: '[::]:8080'
 ```

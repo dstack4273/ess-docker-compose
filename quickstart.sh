@@ -134,6 +134,7 @@ http:
         - name: graphql
           playground: true
         - name: assets
+        - name: adminapi
       binds:
         - address: '[::]:8080'
     - name: internal

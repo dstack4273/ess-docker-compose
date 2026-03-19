@@ -154,6 +154,8 @@ assert_configs() {
     assert_file "mas/config/config.yaml" "mas/config/config.yaml generated"
     assert_contains "mas/config/config.yaml" \
         "homeserver: '${server_name}'"                           "MAS → homeserver"
+    assert_contains "mas/config/config.yaml" \
+        "name: adminapi"                                         "MAS → adminapi listener present"
 
     # Element Web config (heredoc format has spaces: `"key": "value"`)
     assert_file "element/config/config.json" "element/config/config.json generated"

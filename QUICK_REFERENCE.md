@@ -198,5 +198,6 @@ docker compose restart mas
 | `homeserver.domain not configured` (bridge) | Run `setup-bridges.sh` |
 | `as_token was not accepted` | Registration not loaded in Synapse — check `homeserver.yaml` |
 | MAS CSS missing | Add `- name: assets` to MAS listener resources |
+| Element Admin: `TypeError: Failed to fetch` | Add `- name: adminapi` to MAS listener resources |
 | `Template rendered to empty string` | Set `fetch_userinfo: true` in MAS upstream provider |
 | Bridge: `Connection refused` | Bridge hostname is 127.0.0.1 — must be 0.0.0.0 in config |
