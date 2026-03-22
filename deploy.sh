@@ -1278,8 +1278,8 @@ ${AUTH_DOMAIN}:443 {
         reverse_proxy mas:8080
     }
 
-    # Account portal
-    handle_path /account/* {
+    # Account portal (handle, not handle_path — preserves /account/ prefix for MAS SPA routing)
+    handle /account/* {
         reverse_proxy mas:8080
     }
 
@@ -1497,19 +1497,24 @@ if [[ "$DEPLOYMENT_MODE" == "local" ]]; then
     mkdir -p mas/certs
     mkdir -p caddy/data/caddy  # Required for Caddy to save PKI certificates
 
-    # Wait for Caddy to generate CA
-    print_info "Waiting for Caddy to generate local CA..."
-    sleep 5
+    # Wait for Caddy to generate CA (retry loop — cert is created lazily on first HTTPS request)
+    print_info "Waiting for Caddy to generate local CA certificate..."
+    CADDY_CA_SRC="caddy/data/caddy/pki/authorities/local/root.crt"
+    CA_READY=false
+    for i in {1..24}; do
+        # Trigger HTTPS request each iteration to prompt Caddy to generate certs
+        curl -k https://${AUTH_DOMAIN} > /dev/null 2>&1 || true
+        if sudo test -f "${CADDY_CA_SRC}"; then
+            CA_READY=true
+            break
+        fi
+        sleep 5
+    done
 
-    # Trigger HTTPS requests to force Caddy to generate certificates
-    print_info "Triggering certificate generation..."
-    curl -k https://${AUTH_DOMAIN} > /dev/null 2>&1 || true
-    sleep 3
-
-    # Copy CA certificate from host path (Caddy saves to volume)
-    if [ -f "caddy/data/caddy/pki/authorities/local/root.crt" ]; then
-        cp caddy/data/caddy/pki/authorities/local/root.crt mas/certs/caddy-ca.crt
-        chmod 644 mas/certs/caddy-ca.crt
+    # Copy CA certificate from host path (Caddy data dir is root-owned via Docker)
+    if [[ "$CA_READY" == true ]]; then
+        sudo cp "${CADDY_CA_SRC}" mas/certs/caddy-ca.crt
+        sudo chmod 644 mas/certs/caddy-ca.crt
         print_status "Caddy CA certificate copied to mas/certs/caddy-ca.crt"
 
         # Restart MAS to pick up the certificate
@@ -1518,9 +1523,9 @@ if [[ "$DEPLOYMENT_MODE" == "local" ]]; then
         sleep 5
         print_status "MAS restarted with trusted CA certificate"
     else
-        print_warning "Could not find Caddy CA certificate at caddy/data/caddy/pki/authorities/local/root.crt"
+        print_warning "Could not find Caddy CA certificate after 2 minutes"
         print_info "You may need to manually copy it after Caddy generates it"
-        print_info "Run: cp caddy/data/caddy/pki/authorities/local/root.crt mas/certs/caddy-ca.crt"
+        print_info "Run: sudo cp caddy/data/caddy/pki/authorities/local/root.crt mas/certs/caddy-ca.crt"
         print_info "Then restart MAS: $DOCKER_COMPOSE_CMD -f ${COMPOSE_FILE} restart mas"
     fi
     echo ""
@@ -1651,8 +1656,8 @@ ${AUTH_DOMAIN} {
         reverse_proxy ${MATRIX_SERVER_IP}:8080
     }
 
-    # Account portal
-    handle_path /account/* {
+    # Account portal (handle, not handle_path — preserves /account/ prefix for MAS SPA routing)
+    handle /account/* {
         reverse_proxy ${MATRIX_SERVER_IP}:8080
     }
 
