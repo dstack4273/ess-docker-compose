@@ -1572,6 +1572,7 @@ ${MATRIX_DOMAIN} {
     @wk path /.well-known/matrix/client
     handle @wk {
         header Content-Type application/json
+        header Access-Control-Allow-Origin "*"
         respond \`${PROD_WELLKNOWN_JSON}\` 200
     }
 
@@ -1716,6 +1717,7 @@ ${SERVER_NAME} {
     @wk path /.well-known/matrix/client
     handle @wk {
         header Content-Type application/json
+        header Access-Control-Allow-Origin "*"
         respond \`${PROD_WELLKNOWN_JSON}\` 200
     }
 
