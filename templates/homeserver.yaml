@@ -45,6 +45,10 @@ registration_shared_secret: "{{SYNAPSE_REGISTRATION_SHARED_SECRET}}"
 # Allow guest access
 allow_guest_access: false
 
+# Public room directory visibility
+allow_public_rooms_without_auth: false
+allow_public_rooms_over_federation: false
+
 # Matrix Authentication Service (MAS) integration (Synapse 1.136+)
 # Replaces deprecated experimental_features.msc3861
 matrix_authentication_service:

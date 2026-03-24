@@ -980,6 +980,10 @@ sed -i '/^# Experimental features$/d' synapse/data/homeserver.yaml
 sed -i '/^# Enable registration/d' synapse/data/homeserver.yaml
 sed -i '/^enable_registration:/d' synapse/data/homeserver.yaml
 
+# Remove old public room settings if present (re-added explicitly below)
+sed -i '/^allow_public_rooms_without_auth:/d' synapse/data/homeserver.yaml
+sed -i '/^allow_public_rooms_over_federation:/d' synapse/data/homeserver.yaml
+
 # Remove old double-puppeting appservice registration if present (prevents duplication on re-run)
 sed -i '/^# Double-puppeting appservice/d' synapse/data/homeserver.yaml
 sed -i '/^app_service_config_files:/,/^[^ ]/{ /^app_service_config_files:/d; /^[^ ]/!d }' synapse/data/homeserver.yaml
@@ -1006,6 +1010,9 @@ database:
 
 # Enable registration (disabled when using MAS/OAuth delegation)
 enable_registration: false
+allow_guest_access: false
+allow_public_rooms_without_auth: false
+allow_public_rooms_over_federation: false
 
 # MAS Integration (Synapse 1.136+ stable config — replaces deprecated experimental_features.msc3861)
 matrix_authentication_service:
@@ -1081,8 +1088,8 @@ if [[ "$DEPLOYMENT_MODE" == "local" ]]; then
 {
     # Use local CA for self-signed certificates
     local_certs
-    # Enable admin API
-    admin 0.0.0.0:2019
+    # Enable admin API (localhost only)
+    admin localhost:2019
 }
 CADDYEOF
 
@@ -1560,8 +1567,8 @@ if [[ "$DEPLOYMENT_MODE" == "production" ]]; then
 
 {
     email ${LETSENCRYPT_EMAIL}
-    # Enable admin API (restrict access in firewall)
-    admin 0.0.0.0:2019
+    # Enable admin API (localhost only)
+    admin localhost:2019
 }
 
 # =========================
@@ -1632,6 +1639,11 @@ ${MATRIX_DOMAIN} {
             header_down -Access-Control-Allow-Headers
             header_down -Vary
         }
+    }
+
+    # Block public access to Synapse admin API
+    handle /_synapse/admin* {
+        respond "Forbidden" 403
     }
 
     handle {
