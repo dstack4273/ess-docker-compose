@@ -1190,6 +1190,8 @@ ${MATRIX_DOMAIN}:443 {
         header Access-Control-Allow-Headers "Authorization, Content-Type, Accept"
         header Vary "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
         reverse_proxy mas:8080 {
+            header_up Host {http.request.host}
+            header_up X-Forwarded-Host {http.request.host}
             header_down -Access-Control-Allow-Origin
             header_down -Access-Control-Allow-Methods
             header_down -Access-Control-Allow-Headers
@@ -1230,7 +1232,10 @@ ${AUTH_DOMAIN}:443 {
         header ?Access-Control-Allow-Origin "*"
         header ?Access-Control-Allow-Methods "GET, OPTIONS"
         header ?Access-Control-Allow-Headers "*"
-        reverse_proxy mas:8080
+        reverse_proxy mas:8080 {
+            header_up Host {http.request.host}
+            header_up X-Forwarded-Host {http.request.host}
+        }
     }
 
     # Dynamic Client Registration: CORS preflight
@@ -1251,7 +1256,10 @@ ${AUTH_DOMAIN}:443 {
         header ?Access-Control-Allow-Origin "*"
         header ?Access-Control-Allow-Methods "POST, OPTIONS"
         header ?Access-Control-Allow-Headers "*"
-        reverse_proxy mas:8080
+        reverse_proxy mas:8080 {
+            header_up Host {http.request.host}
+            header_up X-Forwarded-Host {http.request.host}
+        }
     }
 
     # JWKS preflight
@@ -1273,7 +1281,10 @@ ${AUTH_DOMAIN}:443 {
         header ?Access-Control-Allow-Methods "GET, OPTIONS"
         header ?Access-Control-Allow-Headers "*"
         uri replace /oauth2/keys.json /oauth2/jwks
-        reverse_proxy mas:8080
+        reverse_proxy mas:8080 {
+            header_up Host {http.request.host}
+            header_up X-Forwarded-Host {http.request.host}
+        }
     }
 
     # Generic OAuth2 endpoints
@@ -1282,12 +1293,18 @@ ${AUTH_DOMAIN}:443 {
         header ?Access-Control-Allow-Origin "*"
         header ?Access-Control-Allow-Methods "GET, OPTIONS, POST"
         header ?Access-Control-Allow-Headers "*"
-        reverse_proxy mas:8080
+        reverse_proxy mas:8080 {
+            header_up Host {http.request.host}
+            header_up X-Forwarded-Host {http.request.host}
+        }
     }
 
     # Account portal (handle, not handle_path — preserves /account/ prefix for MAS SPA routing)
     handle /account/* {
-        reverse_proxy mas:8080
+        reverse_proxy mas:8080 {
+            header_up Host {http.request.host}
+            header_up X-Forwarded-Host {http.request.host}
+        }
     }
 
     # Authelia endpoints (proxy to authelia)
@@ -1297,7 +1314,10 @@ ${AUTH_DOMAIN}:443 {
 
     # Fallback: everything else to MAS
     handle {
-        reverse_proxy mas:8080
+        reverse_proxy mas:8080 {
+            header_up Host {http.request.host}
+            header_up X-Forwarded-Host {http.request.host}
+        }
     }
 
     # Add CORS on error responses
@@ -1622,6 +1642,8 @@ ${MATRIX_DOMAIN} {
     handle @compat {
         header Access-Control-Allow-Origin "*"
         reverse_proxy ${MATRIX_SERVER_IP}:8080 {
+            header_up Host {http.request.host}
+            header_up X-Forwarded-Host {http.request.host}
             header_down -Access-Control-Allow-Origin
             header_down -Access-Control-Allow-Methods
             header_down -Access-Control-Allow-Headers
@@ -1659,23 +1681,35 @@ ${AUTH_DOMAIN} {
     @disco path /.well-known/openid-configuration
     handle @disco {
         header ?Access-Control-Allow-Origin "*"
-        reverse_proxy ${MATRIX_SERVER_IP}:8080
+        reverse_proxy ${MATRIX_SERVER_IP}:8080 {
+            header_up Host {http.request.host}
+            header_up X-Forwarded-Host {http.request.host}
+        }
     }
 
     # OAuth2 endpoints
     @oauth path /oauth2/*
     route @oauth {
         header ?Access-Control-Allow-Origin "*"
-        reverse_proxy ${MATRIX_SERVER_IP}:8080
+        reverse_proxy ${MATRIX_SERVER_IP}:8080 {
+            header_up Host {http.request.host}
+            header_up X-Forwarded-Host {http.request.host}
+        }
     }
 
     # Account portal (handle, not handle_path — preserves /account/ prefix for MAS SPA routing)
     handle /account/* {
-        reverse_proxy ${MATRIX_SERVER_IP}:8080
+        reverse_proxy ${MATRIX_SERVER_IP}:8080 {
+            header_up Host {http.request.host}
+            header_up X-Forwarded-Host {http.request.host}
+        }
     }
 
     handle {
-        reverse_proxy ${MATRIX_SERVER_IP}:8080
+        reverse_proxy ${MATRIX_SERVER_IP}:8080 {
+            header_up Host {http.request.host}
+            header_up X-Forwarded-Host {http.request.host}
+        }
     }
 
     handle_errors {
