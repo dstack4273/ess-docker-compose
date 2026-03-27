@@ -1214,6 +1214,11 @@ ${MATRIX_DOMAIN}:443 {
         }
     }
 
+    # Block public access to Synapse admin API
+    handle /_synapse/admin* {
+        respond "Forbidden" 403
+    }
+
     # Default: everything else → Synapse
     handle {
         reverse_proxy synapse:8008

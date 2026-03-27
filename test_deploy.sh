@@ -209,6 +209,39 @@ assert_configs() {
         assert_not_contains "caddy/Caddyfile" \
             "# Identity Domain (well-known delegation)"          "Caddyfile → no identity block in subdomain mode"
     fi
+
+    # ── MAS config correctness ───────────────────────────────────────────────
+    local auth_domain="auth.example.test"
+    assert_contains "mas/config/config.yaml" \
+        "public_base: 'https://${auth_domain}/'"             "MAS → public_base uses auth domain"
+    assert_contains "mas/config/config.yaml" \
+        "issuer: 'https://${auth_domain}/'"                  "MAS → issuer uses auth domain"
+    assert_contains "mas/config/config.yaml" \
+        "endpoint: 'http://synapse:8008'"                    "MAS → synapse endpoint correct"
+
+    # ── Synapse config correctness ───────────────────────────────────────────
+    assert_contains "synapse/data/homeserver.yaml" \
+        "endpoint: 'http://mas:8080'"                        "Synapse → MAS endpoint correct"
+    assert_contains "synapse/data/homeserver.yaml" \
+        "enable_registration: false"                         "Synapse → registration disabled"
+    assert_contains "synapse/data/homeserver.yaml" \
+        "allow_public_rooms_without_auth: false"             "Synapse → public rooms not public"
+    assert_contains "synapse/data/homeserver.yaml" \
+        "allow_public_rooms_over_federation: false"          "Synapse → public rooms not over federation"
+
+    # ── Caddyfile security ───────────────────────────────────────────────────
+    assert_contains "caddy/Caddyfile" \
+        "admin localhost:2019"                               "Caddyfile → admin API localhost only"
+    assert_contains "caddy/Caddyfile" \
+        "header_up X-Forwarded-Host"                        "Caddyfile → MAS proxy forwards X-Forwarded-Host"
+    assert_contains "caddy/Caddyfile" \
+        "/_synapse/admin"                                   "Caddyfile → synapse admin route present"
+
+    # ── Well-known completeness ──────────────────────────────────────────────
+    assert_contains "caddy/Caddyfile" \
+        '"m.authentication"'                                "Caddyfile → well-known includes m.authentication"
+    assert_contains "caddy/Caddyfile" \
+        "\"issuer\":\"https://${auth_domain}/\""            "Caddyfile → well-known m.authentication.issuer correct"
 }
 
 # ─── Curl an HTTPS endpoint, routing *.example.test → 127.0.0.1 ─────────────
@@ -221,6 +254,18 @@ curl_local() {
         args+=(-k)
     fi
     curl "${args[@]}" "https://${domain}${path}" 2>/dev/null || true
+}
+
+# Returns only the HTTP status code (does not fail on non-2xx)
+curl_local_status() {
+    local domain="$1" path="$2"
+    local -a args=(-s --max-time 15 --resolve "${domain}:443:127.0.0.1" -o /dev/null -w "%{http_code}")
+    if [[ -f mas/certs/caddy-ca.crt ]]; then
+        args+=(--cacert mas/certs/caddy-ca.crt)
+    else
+        args+=(-k)
+    fi
+    curl "${args[@]}" "https://${domain}${path}" 2>/dev/null || echo "000"
 }
 
 # ─── Copy Caddy CA to MAS and restart MAS ────────────────────────────────────
@@ -293,10 +338,45 @@ assert_endpoints() {
     fi
 
     # MAS OIDC discovery
-    local oidc; oidc=$(curl_local "auth.example.test" "/.well-known/openid-configuration")
+    local auth_domain="auth.example.test"
+    local oidc; oidc=$(curl_local "$auth_domain" "/.well-known/openid-configuration")
     echo "$oidc" | grep -q '"issuer"' \
         && pass "MAS OIDC discovery responds" \
         || fail "MAS OIDC discovery (got: '${oidc:-no response}')"
+    # issuer and authorization_endpoint must use the public auth domain, not an internal hostname
+    # (regression test for issue #16 — missing X-Forwarded-Host caused silent OAuth2 breakage)
+    echo "$oidc" | grep -q "\"issuer\":\"https://${auth_domain}/\"" \
+        && pass "MAS OIDC issuer = https://${auth_domain}/" \
+        || fail "MAS OIDC issuer wrong — check X-Forwarded-Host forwarding (got: '${oidc:-}')"
+    echo "$oidc" | grep -q "\"authorization_endpoint\":\"https://${auth_domain}/" \
+        && pass "MAS OIDC authorization_endpoint on ${auth_domain}" \
+        || fail "MAS OIDC authorization_endpoint wrong — login button will silently fail (got: '${oidc:-}')"
+
+    # .well-known must include m.authentication so clients find MAS
+    echo "$wk" | grep -q '"m.authentication"' \
+        && pass ".well-known includes m.authentication" \
+        || fail ".well-known missing m.authentication (got: '${wk:-}')"
+    echo "$wk" | grep -q "\"issuer\":\"https://${auth_domain}/\"" \
+        && pass ".well-known m.authentication.issuer = https://${auth_domain}/" \
+        || fail ".well-known m.authentication.issuer wrong (got: '${wk:-}')"
+
+    # Synapse /_matrix/client/versions (confirms Synapse is up and routing works)
+    local versions; versions=$(curl_local "$matrix_domain" "/_matrix/client/versions")
+    echo "$versions" | grep -q '"versions"' \
+        && pass "Synapse /_matrix/client/versions responds" \
+        || fail "Synapse /_matrix/client/versions (got: '${versions:-no response}')"
+
+    # Login compat endpoint must be proxied to MAS (not return Synapse 404)
+    local login; login=$(curl_local "$matrix_domain" "/_matrix/client/v3/login")
+    echo "$login" | grep -qE '"flows"|"type"' \
+        && pass "/_matrix/client/v3/login proxied to MAS" \
+        || fail "/_matrix/client/v3/login not proxied to MAS (got: '${login:-no response}')"
+
+    # Synapse admin API must be blocked at Caddy (403)
+    local admin_code; admin_code=$(curl_local_status "$matrix_domain" "/_synapse/admin/v1/server_version")
+    [[ "$admin_code" == "403" ]] \
+        && pass "/_synapse/admin blocked (403)" \
+        || fail "/_synapse/admin not blocked (HTTP ${admin_code})"
 
     # Element Web
     local elem; elem=$(curl_local "element.example.test" "/")
