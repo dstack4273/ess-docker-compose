@@ -385,6 +385,40 @@ assert_endpoints() {
         || fail "Element Web root (no Element content in response)"
 }
 
+# ─── Quickstart config assertions ────────────────────────────────────────────
+assert_quickstart_configs() {
+    local domain="$1"
+    local matrix_domain="matrix.${domain}"
+    local auth_domain="auth.${domain}"
+
+    header "Quickstart config assertions  (domain=${domain})"
+
+    assert_file ".env"                        ".env generated"
+    assert_contains ".env" "DOMAIN=${domain}" ".env → DOMAIN"
+    assert_contains ".env" "MATRIX_DOMAIN=${matrix_domain}" ".env → MATRIX_DOMAIN"
+
+    assert_file "mas/config/config.yaml"      "mas/config/config.yaml generated"
+    assert_contains "mas/config/config.yaml"  "homeserver: '${matrix_domain}'"       "MAS → homeserver"
+    assert_contains "mas/config/config.yaml"  "name: adminapi"                        "MAS → adminapi listener"
+    assert_contains "mas/config/config.yaml"  "public_base: 'https://${auth_domain}/'" "MAS → public_base"
+    assert_contains "mas/config/config.yaml"  "issuer: 'https://${auth_domain}/'"     "MAS → issuer"
+
+    assert_file "element/config/config.json"  "element/config/config.json generated"
+
+    assert_file "synapse/data/homeserver.yaml" "synapse/data/homeserver.yaml generated"
+    assert_contains "synapse/data/homeserver.yaml" "enable_registration: false"                  "Synapse → registration disabled"
+    assert_contains "synapse/data/homeserver.yaml" "allow_guest_access: false"                   "Synapse → guest access disabled"
+    assert_contains "synapse/data/homeserver.yaml" "allow_public_rooms_without_auth: false"      "Synapse → public rooms blocked"
+    assert_contains "synapse/data/homeserver.yaml" "allow_public_rooms_over_federation: false"   "Synapse → public rooms over federation blocked"
+
+    assert_file "caddy/Caddyfile"             "caddy/Caddyfile generated"
+    assert_contains     "caddy/Caddyfile" "admin localhost:2019"       "Caddyfile → admin API localhost only"
+    assert_contains     "caddy/Caddyfile" "/_synapse/admin"            "Caddyfile → synapse admin block present"
+    assert_contains     "caddy/Caddyfile" "header_up X-Forwarded-Host" "Caddyfile → MAS proxy forwards X-Forwarded-Host"
+    assert_contains     "caddy/Caddyfile" "handle /account/"           "Caddyfile → /account/ uses handle (preserves prefix)"
+    assert_not_contains "caddy/Caddyfile" "handle_path /account/"      "Caddyfile → /account/ not handle_path"
+}
+
 # ─── Run one full scenario ────────────────────────────────────────────────────
 run_scenario() {
     local name="$1"
@@ -458,6 +492,52 @@ run_scenario \
     "B · Subdomain identity  (@user:matrix.example.test)" \
     "2" \
     "matrix.example.test"
+
+# Scenario P — production Caddyfile generation (config only, no Let's Encrypt)
+section "P · Production Caddyfile  (config only)"
+teardown_stack
+cleanup_configs
+info "Running deploy.sh production mode (piped stdin, SKIP_START=true)"
+# Stdin answers in prompt order:
+#   [1] Deployment type:               2  (production)
+#   [2] Include Authelia?              n
+#   [3] Enable Element Call?           n
+#   [4] Custom Docker registry prefix: (empty)
+#   [5] Use hardened images?           n
+#   [6] Base domain:                   example.com
+#   [7] Matrix subdomain:              (empty → matrix)
+#   [8] Element subdomain:             (empty → element)
+#   [9] Admin subdomain:               (empty → admin)
+#  [10] Auth subdomain:                (empty → auth)
+#  [11] Authelia subdomain:            (empty → authelia)
+#  [12] SERVER_NAME choice:            1  (TLD: @user:example.com)
+#  [13] Matrix server address:         (empty → 10.0.1.10)
+#  [14] Authelia server address:       (empty → 10.0.1.20)
+#  [15] Let's Encrypt email:           (empty → admin@example.com)
+printf '%s\n' "2" "n" "n" "" "n" "example.com" "" "" "" "" "" "1" "" "" "" \
+    | SKIP_START=true bash deploy.sh
+
+header "Production Caddyfile assertions"
+assert_file "caddy/Caddyfile.production"                              "caddy/Caddyfile.production generated"
+assert_contains     "caddy/Caddyfile.production" "admin localhost:2019"        "Caddyfile.production → admin API localhost only"
+assert_contains     "caddy/Caddyfile.production" "/_synapse/admin"             "Caddyfile.production → synapse admin block present"
+assert_contains     "caddy/Caddyfile.production" "header_up X-Forwarded-Host"  "Caddyfile.production → MAS proxy forwards X-Forwarded-Host"
+assert_contains     "caddy/Caddyfile.production" "handle /account/"            "Caddyfile.production → /account/ uses handle (preserves prefix)"
+assert_not_contains "caddy/Caddyfile.production" "handle_path /account/"       "Caddyfile.production → /account/ not handle_path"
+assert_contains     "caddy/Caddyfile.production" '"m.authentication"'          "Caddyfile.production → well-known includes m.authentication"
+assert_contains     "caddy/Caddyfile.production" "Access-Control-Allow-Origin" "Caddyfile.production → well-known has CORS header"
+
+# Scenario Q — quickstart.sh config generation
+section "Q · quickstart.sh  (single-machine, config only)"
+teardown_stack
+cleanup_configs
+info "Running quickstart.sh (piped stdin, SKIP_START=true)"
+printf '%s\n' "example.test" "test@example.test" "n" \
+    | SKIP_START=true bash quickstart.sh
+assert_quickstart_configs "example.test"
+if [[ "$SKIP_INTEGRATION" != "true" ]]; then
+    warn "Quickstart endpoint tests skipped (stack not started in SKIP_START mode)"
+fi
 
 trap - EXIT
 cleanup_on_exit

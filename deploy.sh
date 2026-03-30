@@ -1461,6 +1461,11 @@ echo ""
 
 # Step 14: Start the stack
 echo -e "${BLUE}[14/14] Starting the Matrix stack...${NC}"
+
+if [[ "${SKIP_START:-false}" == "true" ]]; then
+    print_info "Skipping stack start (SKIP_START=true)"
+else
+
 print_info "Using compose file: ${COMPOSE_FILE}"
 print_info "This may take a few minutes on first run..."
 echo ""
@@ -1562,6 +1567,8 @@ if [[ "$DEPLOYMENT_MODE" == "local" ]]; then
     fi
     echo ""
 fi
+
+fi  # end SKIP_START
 
 # ============================================================================
 # PRODUCTION: Generate Caddy and Authelia configs for separate machines

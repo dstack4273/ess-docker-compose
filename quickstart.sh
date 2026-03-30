@@ -270,6 +270,7 @@ if [[ ! -f "synapse/data/homeserver.yaml" ]]; then
         -e SYNAPSE_SERVER_NAME="${MATRIX_DOMAIN}" \
         -e SYNAPSE_REPORT_STATS=no \
         matrixdotorg/synapse:latest generate 2>/dev/null
+    sudo chown -R "$(id -u):$(id -g)" synapse/data/
     ok "Synapse config generated"
 fi
 
@@ -297,6 +298,9 @@ database:
     cp_max: 10
 
 enable_registration: false
+allow_guest_access: false
+allow_public_rooms_without_auth: false
+allow_public_rooms_over_federation: false
 
 matrix_authentication_service:
   enabled: true
@@ -337,7 +341,7 @@ fi
 cat > caddy/Caddyfile << EOF
 {
     email ${LETSENCRYPT_EMAIL}
-    admin 0.0.0.0:2019
+    admin localhost:2019
 }
 
 ${MATRIX_DOMAIN} {
@@ -370,6 +374,8 @@ ${MATRIX_DOMAIN} {
     handle @compat {
         header Access-Control-Allow-Origin "*"
         reverse_proxy mas:8080 {
+            header_up Host {http.request.host}
+            header_up X-Forwarded-Host {http.request.host}
             header_down -Access-Control-Allow-Origin
         }
     }
@@ -382,6 +388,11 @@ ${MATRIX_DOMAIN} {
         }
     }
 
+    # Block public access to Synapse admin API
+    handle /_synapse/admin* {
+        respond "Forbidden" 403
+    }
+
     handle {
         reverse_proxy synapse:8008
     }
@@ -391,21 +402,33 @@ ${AUTH_DOMAIN} {
     @disco path /.well-known/openid-configuration
     handle @disco {
         header Access-Control-Allow-Origin "*"
-        reverse_proxy mas:8080
+        reverse_proxy mas:8080 {
+            header_up Host {http.request.host}
+            header_up X-Forwarded-Host {http.request.host}
+        }
     }
 
     @oauth path /oauth2/*
     route @oauth {
         header Access-Control-Allow-Origin "*"
-        reverse_proxy mas:8080
+        reverse_proxy mas:8080 {
+            header_up Host {http.request.host}
+            header_up X-Forwarded-Host {http.request.host}
+        }
     }
 
-    handle_path /account/* {
-        reverse_proxy mas:8080
+    handle /account/* {
+        reverse_proxy mas:8080 {
+            header_up Host {http.request.host}
+            header_up X-Forwarded-Host {http.request.host}
+        }
     }
 
     handle {
-        reverse_proxy mas:8080
+        reverse_proxy mas:8080 {
+            header_up Host {http.request.host}
+            header_up X-Forwarded-Host {http.request.host}
+        }
     }
 }
 
@@ -451,6 +474,11 @@ echo ""
 
 # ── Start the stack ───────────────────────────────────────────────────────────
 
+if [[ "${SKIP_START:-false}" == "true" ]]; then
+    ok "Skipping stack start (SKIP_START=true)"
+    echo ""
+else
+
 info "Starting PostgreSQL..."
 sudo docker compose up -d postgres
 
@@ -468,6 +496,8 @@ if $USE_ELEMENT_CALL; then CORE_SERVICES="${CORE_SERVICES} livekit lk-jwt-servic
 info "Starting all services..."
 sudo docker compose --profile single-machine up -d ${CORE_SERVICES}
 echo ""
+
+fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 
