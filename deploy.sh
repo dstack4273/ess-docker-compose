@@ -1064,6 +1064,8 @@ EOF
 
 # Restore ownership to Synapse uid so the container can read/write its own data
 sudo chown -R 991:991 synapse/data/
+sudo chmod 640 synapse/data/*.signing.key 2>/dev/null || true
+sudo chown -R 991:991 mas/data/
 print_status "Database configuration updated with current credentials"
 echo ""
 

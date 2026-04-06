@@ -326,6 +326,13 @@ fi
 
 ok "Synapse config patched"
 
+# Fix ownership: Synapse runs as uid 991 inside Docker
+info "Fixing Synapse data permissions..."
+sudo chown -R 991:991 synapse/data/
+sudo chmod 640 synapse/data/*.signing.key 2>/dev/null || true
+sudo chown -R 991:991 mas/data/
+ok "Permissions fixed"
+
 # ── Caddyfile ─────────────────────────────────────────────────────────────────
 
 info "Writing Caddyfile..."
