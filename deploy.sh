@@ -181,6 +181,33 @@ fi
 echo ""
 
 # ============================================================================
+# OPEN REGISTRATION
+# ============================================================================
+if [[ "$USE_AUTHELIA" == true ]]; then
+    # Authelia controls user provisioning — password registration prompt is not applicable
+    OPEN_REGISTRATION=false
+else
+    echo -e "${CYAN}Allow open user registration?${NC}"
+    echo ""
+    echo -e "  ${GREEN}Yes)${NC} Anyone can create an account via the login page"
+    echo -e "       → Same experience as matrix.org"
+    echo -e "       ${YELLOW}⚠${NC}  Only enable if you intend a public server"
+    echo ""
+    echo -e "  ${GREEN}No)${NC}  Accounts must be created by an admin (default)"
+    echo -e "       → Recommended for private/family servers"
+    echo ""
+    read -p "Allow open user registration? [y/N]: " reg_choice
+    if [[ "$reg_choice" =~ ^[Yy]$ ]]; then
+        OPEN_REGISTRATION=true
+        echo -e "${GREEN}✓${NC} Open registration enabled"
+    else
+        OPEN_REGISTRATION=false
+        echo -e "${GREEN}✓${NC} Registration restricted to admin-created accounts"
+    fi
+fi
+echo ""
+
+# ============================================================================
 # DOCKER REGISTRY AND HARDENED IMAGES
 # ============================================================================
 echo -e "${CYAN}Docker Image Configuration:${NC}"
@@ -836,8 +863,8 @@ branding:
 
 policy:
   registration:
-    enabled: true
-    require_email: true
+    enabled: ${OPEN_REGISTRATION}
+    require_email: false
 
 clients:
   # Element Web client (public)

@@ -179,7 +179,7 @@ email:
 
 policy:
   registration:
-    enabled: true
+    enabled: false
     require_email: false
 
 clients:

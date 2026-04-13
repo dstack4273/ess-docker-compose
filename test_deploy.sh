@@ -218,6 +218,8 @@ assert_configs() {
         "issuer: 'https://${auth_domain}/'"                  "MAS → issuer uses auth domain"
     assert_contains "mas/config/config.yaml" \
         "endpoint: 'http://synapse:8008'"                    "MAS → synapse endpoint correct"
+    assert_contains "mas/config/config.yaml" \
+        "enabled: false"                                     "MAS → open registration disabled by default"
 
     # ── Synapse config correctness ───────────────────────────────────────────
     assert_contains "synapse/data/homeserver.yaml" \
@@ -402,6 +404,7 @@ assert_quickstart_configs() {
     assert_contains "mas/config/config.yaml"  "name: adminapi"                        "MAS → adminapi listener"
     assert_contains "mas/config/config.yaml"  "public_base: 'https://${auth_domain}/'" "MAS → public_base"
     assert_contains "mas/config/config.yaml"  "issuer: 'https://${auth_domain}/'"     "MAS → issuer"
+    assert_contains "mas/config/config.yaml"  "enabled: false"                        "MAS → open registration disabled"
 
     assert_file "element/config/config.json"  "element/config/config.json generated"
 
@@ -435,11 +438,12 @@ run_scenario() {
     #   [1] Deployment type:                1  (local)
     #   [2] Include Authelia?               n
     #   [3] Enable Element Call?            n
-    #   [4] Custom Docker registry prefix:  (empty → default)
-    #   [5] Use hardened images?            n
-    #   [6] SERVER_NAME choice:             $sn_choice  (1=TLD, 2=subdomain)
-    #   [7] Press Enter to continue:        (empty)
-    printf '%s\n' "1" "n" "n" "" "n" "$sn_choice" "" \
+    #   [4] Allow open registration?        n  (default: closed)
+    #   [5] Custom Docker registry prefix:  (empty → default)
+    #   [6] Use hardened images?            n
+    #   [7] SERVER_NAME choice:             $sn_choice  (1=TLD, 2=subdomain)
+    #   [8] Press Enter to continue:        (empty)
+    printf '%s\n' "1" "n" "n" "n" "" "n" "$sn_choice" "" \
         | bash deploy.sh
 
     assert_configs "$expected_sn"
@@ -502,19 +506,20 @@ info "Running deploy.sh production mode (piped stdin, SKIP_START=true)"
 #   [1] Deployment type:               2  (production)
 #   [2] Include Authelia?              n
 #   [3] Enable Element Call?           n
-#   [4] Custom Docker registry prefix: (empty)
-#   [5] Use hardened images?           n
-#   [6] Base domain:                   example.com
-#   [7] Matrix subdomain:              (empty → matrix)
-#   [8] Element subdomain:             (empty → element)
-#   [9] Admin subdomain:               (empty → admin)
-#  [10] Auth subdomain:                (empty → auth)
-#  [11] Authelia subdomain:            (empty → authelia)
-#  [12] SERVER_NAME choice:            1  (TLD: @user:example.com)
-#  [13] Matrix server address:         (empty → 10.0.1.10)
-#  [14] Authelia server address:       (empty → 10.0.1.20)
-#  [15] Let's Encrypt email:           (empty → admin@example.com)
-printf '%s\n' "2" "n" "n" "" "n" "example.com" "" "" "" "" "" "1" "" "" "" \
+#   [4] Allow open registration?       n  (default: closed)
+#   [5] Custom Docker registry prefix: (empty)
+#   [6] Use hardened images?           n
+#   [7] Base domain:                   example.com
+#   [8] Matrix subdomain:              (empty → matrix)
+#   [9] Element subdomain:             (empty → element)
+#  [10] Admin subdomain:               (empty → admin)
+#  [11] Auth subdomain:                (empty → auth)
+#  [12] Authelia subdomain:            (empty → authelia)
+#  [13] SERVER_NAME choice:            1  (TLD: @user:example.com)
+#  [14] Matrix server address:         (empty → 10.0.1.10)
+#  [15] Authelia server address:       (empty → 10.0.1.20)
+#  [16] Let's Encrypt email:           (empty → admin@example.com)
+printf '%s\n' "2" "n" "n" "n" "" "n" "example.com" "" "" "" "" "" "1" "" "" "" \
     | SKIP_START=true bash deploy.sh
 
 header "Production Caddyfile assertions"
@@ -538,6 +543,29 @@ assert_quickstart_configs "example.test"
 if [[ "$SKIP_INTEGRATION" != "true" ]]; then
     warn "Quickstart endpoint tests skipped (stack not started in SKIP_START mode)"
 fi
+
+# Scenario R — open registration enabled (config only)
+section "R · Open registration enabled  (config only)"
+teardown_stack
+cleanup_configs
+info "Running deploy.sh with open registration=y (piped stdin, SKIP_START=true)"
+# Stdin answers in prompt order:
+#   [1] Deployment type:                1  (local)
+#   [2] Include Authelia?               n
+#   [3] Enable Element Call?            n
+#   [4] Allow open registration?        y  ← testing the enabled path
+#   [5] Custom Docker registry prefix:  (empty)
+#   [6] Use hardened images?            n
+#   [7] SERVER_NAME choice:             1  (TLD)
+#   [8] Press Enter to continue:        (empty)
+printf '%s\n' "1" "n" "n" "y" "" "n" "1" "" \
+    | SKIP_START=true bash deploy.sh
+header "Open registration assertions"
+assert_file "mas/config/config.yaml" "mas/config/config.yaml generated"
+assert_contains "mas/config/config.yaml" \
+    "enabled: true"                                              "MAS → open registration enabled when y chosen"
+assert_not_contains "mas/config/config.yaml" \
+    "enabled: false"                                             "MAS → no 'enabled: false' when open registration on"
 
 trap - EXIT
 cleanup_on_exit
