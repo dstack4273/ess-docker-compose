@@ -532,14 +532,34 @@ assert_not_contains "caddy/Caddyfile.production" "handle_path /account/"       "
 assert_contains     "caddy/Caddyfile.production" '"m.authentication"'          "Caddyfile.production → well-known includes m.authentication"
 assert_contains     "caddy/Caddyfile.production" "Access-Control-Allow-Origin" "Caddyfile.production → well-known has CORS header"
 
-# Scenario Q — quickstart.sh config generation
+# Scenario Q — quickstart.sh config generation (registration closed, default)
 section "Q · quickstart.sh  (single-machine, config only)"
 teardown_stack
 cleanup_configs
 info "Running quickstart.sh (piped stdin, SKIP_START=true)"
-printf '%s\n' "example.test" "test@example.test" "n" \
+# Stdin answers in prompt order:
+#   [1] Domain:                    example.test
+#   [2] Let's Encrypt email:       test@example.test
+#   [3] Enable Element Call?       n
+#   [4] Allow open registration?   n  (default: closed)
+printf '%s\n' "example.test" "test@example.test" "n" "n" \
     | SKIP_START=true bash quickstart.sh
 assert_quickstart_configs "example.test"
+if [[ "$SKIP_INTEGRATION" != "true" ]]; then
+    warn "Quickstart endpoint tests skipped (stack not started in SKIP_START mode)"
+fi
+
+# Scenario Q2 — quickstart.sh with open registration enabled
+section "Q2 · quickstart.sh open registration  (config only)"
+teardown_stack
+cleanup_configs
+info "Running quickstart.sh with open registration=y (piped stdin, SKIP_START=true)"
+printf '%s\n' "example.test" "test@example.test" "n" "y" \
+    | SKIP_START=true bash quickstart.sh
+header "Quickstart open registration assertions"
+assert_file "mas/config/config.yaml" "mas/config/config.yaml generated"
+assert_contains "mas/config/config.yaml" \
+    "enabled: true"   "MAS → open registration enabled when y chosen (quickstart)"
 if [[ "$SKIP_INTEGRATION" != "true" ]]; then
     warn "Quickstart endpoint tests skipped (stack not started in SKIP_START mode)"
 fi

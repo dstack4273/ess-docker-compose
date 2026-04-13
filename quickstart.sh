@@ -34,6 +34,14 @@ read -p "Email for Let's Encrypt: " LETSENCRYPT_EMAIL
 read -p "Enable Element Call (video/voice)? [y/N]: " _EC
 [[ "$_EC" =~ ^[Yy]$ ]] && USE_ELEMENT_CALL=true || USE_ELEMENT_CALL=false
 
+read -p "Allow open user registration? [y/N]: " _REG
+if [[ "$_REG" =~ ^[Yy]$ ]]; then
+    OPEN_REGISTRATION=true
+    warn "Open registration enabled — anyone can sign up on your server"
+else
+    OPEN_REGISTRATION=false
+fi
+
 echo ""
 
 # ── Derived domains ─────────────────────────────────────────────────────────
@@ -179,7 +187,7 @@ email:
 
 policy:
   registration:
-    enabled: false
+    enabled: ${OPEN_REGISTRATION}
     require_email: false
 
 clients:
