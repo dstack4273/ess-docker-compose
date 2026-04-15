@@ -157,9 +157,9 @@ assert_configs() {
     assert_contains "mas/config/config.yaml" \
         "name: adminapi"                                         "MAS → adminapi listener present"
     assert_contains "mas/config/config.yaml" \
-        "enabled: true"                                          "MAS → open registration enabled"
+        "enabled: false"                                         "MAS → registration closed (admin-only)"
     assert_contains "mas/config/config.yaml" \
-        "require_email: false"                                   "MAS → no email required (local, no SMTP)"
+        "require_email: false"                                   "MAS → require_email false"
 
     # Element Web config (heredoc format has spaces: `"key": "value"`)
     assert_file "element/config/config.json" "element/config/config.json generated"
@@ -406,8 +406,8 @@ assert_quickstart_configs() {
     assert_contains "mas/config/config.yaml"  "name: adminapi"                        "MAS → adminapi listener"
     assert_contains "mas/config/config.yaml"  "public_base: 'https://${auth_domain}/'" "MAS → public_base"
     assert_contains "mas/config/config.yaml"  "issuer: 'https://${auth_domain}/'"     "MAS → issuer"
-    assert_contains "mas/config/config.yaml"  "enabled: true"                         "MAS → open registration enabled"
-    assert_contains "mas/config/config.yaml"  "require_email: false"                  "MAS → no email required (no SMTP)"
+    assert_contains "mas/config/config.yaml"  "enabled: false"                        "MAS → registration closed (admin-only)"
+    assert_contains "mas/config/config.yaml"  "require_email: false"                  "MAS → require_email false (no SMTP)"
 
     assert_file "element/config/config.json"  "element/config/config.json generated"
 
@@ -445,7 +445,8 @@ run_scenario() {
     #   [5] Use hardened images?            n
     #   [6] SERVER_NAME choice:             $sn_choice  (1=TLD, 2=subdomain)
     #   [7] Press Enter to continue:        (empty)
-    printf '%s\n' "1" "n" "n" "" "n" "$sn_choice" "" \
+    #   [8] Allow open registration?        n  (admin-only)
+    printf '%s\n' "1" "n" "n" "" "n" "$sn_choice" "" "n" \
         | bash deploy.sh
 
     assert_configs "$expected_sn"
@@ -520,7 +521,7 @@ info "Running deploy.sh production mode (piped stdin, SKIP_START=true)"
 #  [13] Matrix server address:         (empty → 10.0.1.10)
 #  [14] Authelia server address:       (empty → 10.0.1.20)
 #  [15] Let's Encrypt email:           (empty → admin@example.com)
-#  [16] Configure SMTP?                n  (open registration, no email verification)
+#  [16] Allow open registration?        n  (admin-only, no SMTP prompts)
 printf '%s\n' "2" "n" "n" "" "n" "example.com" "" "" "" "" "" "1" "" "" "" "n" \
     | SKIP_START=true bash deploy.sh
 
@@ -536,8 +537,8 @@ assert_contains     "caddy/Caddyfile.production" "Access-Control-Allow-Origin" "
 
 header "Production MAS registration assertions"
 assert_file "mas/config/config.yaml"                                           "mas/config/config.yaml generated (production)"
-assert_contains "mas/config/config.yaml" "enabled: true"                       "MAS → open registration enabled"
-assert_contains "mas/config/config.yaml" "require_email: false"                "MAS → no email required (no SMTP configured)"
+assert_contains "mas/config/config.yaml" "enabled: false"                      "MAS → registration closed (admin-only, answered n)"
+assert_contains "mas/config/config.yaml" "require_email: false"                "MAS → require_email false"
 
 # Scenario Q — quickstart.sh config generation
 section "Q · quickstart.sh  (single-machine, config only)"
@@ -548,7 +549,7 @@ info "Running quickstart.sh (piped stdin, SKIP_START=true)"
 #   [1] Domain:                    example.test
 #   [2] Let's Encrypt email:       test@example.test
 #   [3] Enable Element Call?       n
-#   [4] Configure SMTP?            n  (open registration, no email verification)
+#   [4] Allow open registration?   n  (admin-only)
 printf '%s\n' "example.test" "test@example.test" "n" "n" \
     | SKIP_START=true bash quickstart.sh
 assert_quickstart_configs "example.test"

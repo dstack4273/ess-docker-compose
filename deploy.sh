@@ -412,9 +412,9 @@ else
 fi
 
 # ============================================================================
-# SMTP CONFIGURATION
+# REGISTRATION AND SMTP CONFIGURATION
 # ============================================================================
-# Defaults — work even without a real mail server (require_email: false)
+# Defaults
 SMTP_HOST="localhost"
 SMTP_PORT="25"
 SMTP_MODE="plain"
@@ -422,30 +422,42 @@ SMTP_FROM_ADDRESS="noreply@${DOMAIN_BASE}"
 SMTP_REPLY_TO_ADDRESS="support@${DOMAIN_BASE}"
 SMTP_USERNAME=""
 SMTP_PASSWORD=""
+OPEN_REGISTRATION=false
 REQUIRE_EMAIL=false
 
-# Only prompt in production + non-Authelia mode; local testing never needs SMTP
-if [[ "$DEPLOYMENT_MODE" == "production" && "$USE_AUTHELIA" == false ]]; then
-    echo -e "${CYAN}Email / SMTP Configuration:${NC}"
+# Only prompt in non-Authelia mode (Authelia controls its own registration)
+if [[ "$USE_AUTHELIA" == false ]]; then
+    echo -e "${CYAN}User Registration:${NC}"
     echo ""
-    echo -e "  Configuring SMTP enables email verification on registration"
-    echo -e "  and password-reset emails. Skip for open registration without"
-    echo -e "  email verification."
-    echo ""
-    read -p "Configure SMTP? [y/N]: " _SMTP_CONF
+    read -p "Allow open user registration (anyone can sign up)? [y/N]: " _OPEN_REG
 
-    if [[ "$_SMTP_CONF" =~ ^[Yy]$ ]]; then
-        read -p "  SMTP hostname: " SMTP_HOST
-        read -p "  SMTP port [587]: " _SP; SMTP_PORT="${_SP:-587}"
-        read -p "  SMTP mode (plain/tls/starttls) [starttls]: " _SM; SMTP_MODE="${_SM:-starttls}"
-        read -p "  SMTP username: " SMTP_USERNAME
-        read -sp "  SMTP password: " SMTP_PASSWORD; echo ""
-        read -p "  From address [noreply@${DOMAIN_BASE}]: " _SF
-        SMTP_FROM_ADDRESS="${_SF:-noreply@${DOMAIN_BASE}}"
-        REQUIRE_EMAIL=true
-        echo -e "${GREEN}✓${NC} SMTP configured (${SMTP_HOST}:${SMTP_PORT}) — email verification enabled"
+    if [[ "$_OPEN_REG" =~ ^[Yy]$ ]]; then
+        OPEN_REGISTRATION=true
+        echo ""
+        # Only prompt SMTP for production; local testing has no real mail server
+        if [[ "$DEPLOYMENT_MODE" == "production" ]]; then
+            read -p "  Configure SMTP for email verification? [Y/n]: " _SMTP_CONF
+            if [[ ! "$_SMTP_CONF" =~ ^[Nn]$ ]]; then
+                read -p "  SMTP hostname: " SMTP_HOST
+                read -p "  SMTP port [587]: " _SP; SMTP_PORT="${_SP:-587}"
+                read -p "  SMTP mode (plain/tls/starttls) [starttls]: " _SM; SMTP_MODE="${_SM:-starttls}"
+                read -p "  SMTP username: " SMTP_USERNAME
+                read -sp "  SMTP password: " SMTP_PASSWORD; echo ""
+                read -p "  From address [noreply@${DOMAIN_BASE}]: " _SF
+                SMTP_FROM_ADDRESS="${_SF:-noreply@${DOMAIN_BASE}}"
+                REQUIRE_EMAIL=true
+                echo -e "${GREEN}✓${NC} Open registration with email verification (${SMTP_HOST}:${SMTP_PORT})"
+            else
+                echo -e "${YELLOW}⚠${NC} Running an open server without email verification is not recommended."
+                echo -e "${YELLOW}⚠${NC} Anyone can sign up without confirming their identity — spam is more likely."
+                echo -e "${GREEN}✓${NC} Open registration without email verification"
+            fi
+        else
+            echo -e "${YELLOW}⚠${NC} Local mode: email verification skipped (no real mail server expected)"
+            echo -e "${GREEN}✓${NC} Open registration without email verification"
+        fi
     else
-        echo -e "${GREEN}✓${NC} Skipped — open registration without email verification"
+        echo -e "${GREEN}✓${NC} Registration closed — accounts created by admin only"
     fi
     echo ""
 fi
@@ -886,7 +898,7 @@ branding:
 
 policy:
   registration:
-    enabled: true
+    enabled: ${OPEN_REGISTRATION}
     require_email: ${REQUIRE_EMAIL}
 
 clients:

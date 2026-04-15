@@ -34,28 +34,37 @@ read -p "Email for Let's Encrypt: " LETSENCRYPT_EMAIL
 read -p "Enable Element Call (video/voice)? [y/N]: " _EC
 [[ "$_EC" =~ ^[Yy]$ ]] && USE_ELEMENT_CALL=true || USE_ELEMENT_CALL=false
 
-read -p "Configure SMTP for email verification on sign-up? [y/N]: " _SMTP_CONF
+read -p "Allow open user registration (anyone can sign up)? [y/N]: " _OPEN_REG
 
 echo ""
 
-# ── SMTP defaults ────────────────────────────────────────────────────────────
+# ── Registration / SMTP defaults ─────────────────────────────────────────────
 
 SMTP_HOST="localhost"; SMTP_PORT="25"; SMTP_MODE="plain"
 SMTP_FROM_ADDRESS="noreply@${DOMAIN}"
 SMTP_REPLY_TO_ADDRESS="support@${DOMAIN}"
 SMTP_USERNAME=""; SMTP_PASSWORD=""
+OPEN_REGISTRATION=false
 REQUIRE_EMAIL=false
 
-if [[ "$_SMTP_CONF" =~ ^[Yy]$ ]]; then
-    read -p "  SMTP host: " SMTP_HOST
-    read -p "  SMTP port [587]: " _SP; SMTP_PORT="${_SP:-587}"
-    read -p "  SMTP mode (plain/tls/starttls) [starttls]: " _SM; SMTP_MODE="${_SM:-starttls}"
-    read -p "  SMTP username: " SMTP_USERNAME
-    read -sp "  SMTP password: " SMTP_PASSWORD; echo ""
-    REQUIRE_EMAIL=true
-    ok "SMTP configured — email verification enabled on sign-up"
+if [[ "$_OPEN_REG" =~ ^[Yy]$ ]]; then
+    OPEN_REGISTRATION=true
+    read -p "  Configure SMTP for email verification? [Y/n]: " _SMTP_CONF
+    if [[ ! "$_SMTP_CONF" =~ ^[Nn]$ ]]; then
+        read -p "  SMTP host: " SMTP_HOST
+        read -p "  SMTP port [587]: " _SP; SMTP_PORT="${_SP:-587}"
+        read -p "  SMTP mode (plain/tls/starttls) [starttls]: " _SM; SMTP_MODE="${_SM:-starttls}"
+        read -p "  SMTP username: " SMTP_USERNAME
+        read -sp "  SMTP password: " SMTP_PASSWORD; echo ""
+        REQUIRE_EMAIL=true
+        ok "Open registration with email verification"
+    else
+        warn "Running an open server without email verification is not recommended."
+        warn "Anyone can sign up without confirming their identity — spam is more likely."
+        ok "Open registration without email verification"
+    fi
 else
-    ok "Open registration — users can sign up without email verification"
+    ok "Registration closed — accounts created by admin only"
 fi
 
 echo ""
@@ -214,7 +223,7 @@ cat >> mas/config/config.yaml << EOF
 
 policy:
   registration:
-    enabled: true
+    enabled: ${OPEN_REGISTRATION}
     require_email: ${REQUIRE_EMAIL}
 
 clients:
