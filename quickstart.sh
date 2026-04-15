@@ -451,11 +451,13 @@ ${MATRIX_DOMAIN} {
 
 ${AUTH_DOMAIN} {
     # OIDC Discovery
+    # Use ? prefix so Caddy only adds headers MAS didn't already set —
+    # duplicate Access-Control-Allow-Origin headers cause CORS errors in browsers.
     @disco path /.well-known/openid-configuration
     handle @disco {
-        header Access-Control-Allow-Origin "*"
-        header Access-Control-Allow-Methods "GET, OPTIONS"
-        header Access-Control-Allow-Headers "*"
+        header ?Access-Control-Allow-Origin "*"
+        header ?Access-Control-Allow-Methods "GET, OPTIONS"
+        header ?Access-Control-Allow-Headers "*"
         reverse_proxy mas:8080 {
             header_up Host {http.request.host}
             header_up X-Forwarded-Host {http.request.host}
@@ -468,18 +470,18 @@ ${AUTH_DOMAIN} {
         path /oauth2/*
     }
     handle @oauth_preflight {
-        header Access-Control-Allow-Origin "*"
-        header Access-Control-Allow-Methods "GET, POST, OPTIONS"
-        header Access-Control-Allow-Headers "Authorization, Content-Type, Accept"
+        header ?Access-Control-Allow-Origin "*"
+        header ?Access-Control-Allow-Methods "GET, POST, OPTIONS"
+        header ?Access-Control-Allow-Headers "Authorization, Content-Type, Accept"
         respond 204
     }
 
     # OAuth2 endpoints
     @oauth path /oauth2/*
     handle @oauth {
-        header Access-Control-Allow-Origin "*"
-        header Access-Control-Allow-Methods "GET, POST, OPTIONS"
-        header Access-Control-Allow-Headers "Authorization, Content-Type, Accept"
+        header ?Access-Control-Allow-Origin "*"
+        header ?Access-Control-Allow-Methods "GET, POST, OPTIONS"
+        header ?Access-Control-Allow-Headers "Authorization, Content-Type, Accept"
         reverse_proxy mas:8080 {
             header_up Host {http.request.host}
             header_up X-Forwarded-Host {http.request.host}
