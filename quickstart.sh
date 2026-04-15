@@ -34,6 +34,30 @@ read -p "Email for Let's Encrypt: " LETSENCRYPT_EMAIL
 read -p "Enable Element Call (video/voice)? [y/N]: " _EC
 [[ "$_EC" =~ ^[Yy]$ ]] && USE_ELEMENT_CALL=true || USE_ELEMENT_CALL=false
 
+read -p "Configure SMTP for email verification on sign-up? [y/N]: " _SMTP_CONF
+
+echo ""
+
+# ── SMTP defaults ────────────────────────────────────────────────────────────
+
+SMTP_HOST="localhost"; SMTP_PORT="25"; SMTP_MODE="plain"
+SMTP_FROM_ADDRESS="noreply@${DOMAIN}"
+SMTP_REPLY_TO_ADDRESS="support@${DOMAIN}"
+SMTP_USERNAME=""; SMTP_PASSWORD=""
+REQUIRE_EMAIL=false
+
+if [[ "$_SMTP_CONF" =~ ^[Yy]$ ]]; then
+    read -p "  SMTP host: " SMTP_HOST
+    read -p "  SMTP port [587]: " _SP; SMTP_PORT="${_SP:-587}"
+    read -p "  SMTP mode (plain/tls/starttls) [starttls]: " _SM; SMTP_MODE="${_SM:-starttls}"
+    read -p "  SMTP username: " SMTP_USERNAME
+    read -sp "  SMTP password: " SMTP_PASSWORD; echo ""
+    REQUIRE_EMAIL=true
+    ok "SMTP configured — email verification enabled on sign-up"
+else
+    ok "Open registration — users can sign up without email verification"
+fi
+
 echo ""
 
 # ── Derived domains ─────────────────────────────────────────────────────────
@@ -171,16 +195,27 @@ passwords:
   enabled: true
 
 email:
-  from: '"Matrix" <noreply@${DOMAIN}>'
+  from: '"Matrix" <${SMTP_FROM_ADDRESS}>'
+  reply_to: '"Matrix Support" <${SMTP_REPLY_TO_ADDRESS}>'
   transport: smtp
-  hostname: 'localhost'
-  port: 25
-  mode: plain
+  hostname: '${SMTP_HOST}'
+  port: ${SMTP_PORT}
+  mode: ${SMTP_MODE}
+EOF
+
+if [[ -n "$SMTP_USERNAME" ]]; then
+    cat >> mas/config/config.yaml << EOF
+  username: '${SMTP_USERNAME}'
+  password: '${SMTP_PASSWORD}'
+EOF
+fi
+
+cat >> mas/config/config.yaml << EOF
 
 policy:
   registration:
     enabled: true
-    require_email: false
+    require_email: ${REQUIRE_EMAIL}
 
 clients:
   - client_id: '01HQW90Z35CMXFJWQPHC3BGZGQ'

@@ -411,6 +411,45 @@ else
     echo ""
 fi
 
+# ============================================================================
+# SMTP CONFIGURATION
+# ============================================================================
+# Defaults — work even without a real mail server (require_email: false)
+SMTP_HOST="localhost"
+SMTP_PORT="25"
+SMTP_MODE="plain"
+SMTP_FROM_ADDRESS="noreply@${DOMAIN_BASE}"
+SMTP_REPLY_TO_ADDRESS="support@${DOMAIN_BASE}"
+SMTP_USERNAME=""
+SMTP_PASSWORD=""
+REQUIRE_EMAIL=false
+
+# Only prompt in production + non-Authelia mode; local testing never needs SMTP
+if [[ "$DEPLOYMENT_MODE" == "production" && "$USE_AUTHELIA" == false ]]; then
+    echo -e "${CYAN}Email / SMTP Configuration:${NC}"
+    echo ""
+    echo -e "  Configuring SMTP enables email verification on registration"
+    echo -e "  and password-reset emails. Skip for open registration without"
+    echo -e "  email verification."
+    echo ""
+    read -p "Configure SMTP? [y/N]: " _SMTP_CONF
+
+    if [[ "$_SMTP_CONF" =~ ^[Yy]$ ]]; then
+        read -p "  SMTP hostname: " SMTP_HOST
+        read -p "  SMTP port [587]: " _SP; SMTP_PORT="${_SP:-587}"
+        read -p "  SMTP mode (plain/tls/starttls) [starttls]: " _SM; SMTP_MODE="${_SM:-starttls}"
+        read -p "  SMTP username: " SMTP_USERNAME
+        read -sp "  SMTP password: " SMTP_PASSWORD; echo ""
+        read -p "  From address [noreply@${DOMAIN_BASE}]: " _SF
+        SMTP_FROM_ADDRESS="${_SF:-noreply@${DOMAIN_BASE}}"
+        REQUIRE_EMAIL=true
+        echo -e "${GREEN}✓${NC} SMTP configured (${SMTP_HOST}:${SMTP_PORT}) — email verification enabled"
+    else
+        echo -e "${GREEN}✓${NC} Skipped — open registration without email verification"
+    fi
+    echo ""
+fi
+
 # Step 1: Check prerequisites
 echo -e "${BLUE}[1/13] Checking prerequisites...${NC}"
 if ! command -v openssl &> /dev/null; then
@@ -822,12 +861,23 @@ fi
 cat >> mas/config/config.yaml << EOF
 
 email:
-  from: '"Matrix Authentication Service" <noreply@matrix.localhost>'
-  reply_to: '"Matrix Support" <support@matrix.localhost>'
+  from: '"Matrix" <${SMTP_FROM_ADDRESS}>'
+  reply_to: '"Matrix Support" <${SMTP_REPLY_TO_ADDRESS}>'
   transport: smtp
-  hostname: 'localhost'
-  port: 25
-  mode: plain
+  hostname: '${SMTP_HOST}'
+  port: ${SMTP_PORT}
+  mode: ${SMTP_MODE}
+EOF
+
+# Append SMTP credentials only when configured
+if [[ -n "$SMTP_USERNAME" ]]; then
+    cat >> mas/config/config.yaml << EOF
+  username: '${SMTP_USERNAME}'
+  password: '${SMTP_PASSWORD}'
+EOF
+fi
+
+cat >> mas/config/config.yaml << EOF
 
 branding:
   service_name: 'Matrix'
@@ -837,7 +887,7 @@ branding:
 policy:
   registration:
     enabled: true
-    require_email: true
+    require_email: ${REQUIRE_EMAIL}
 
 clients:
   # Element Web client (public)

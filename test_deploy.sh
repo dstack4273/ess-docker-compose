@@ -156,6 +156,10 @@ assert_configs() {
         "homeserver: '${server_name}'"                           "MAS → homeserver"
     assert_contains "mas/config/config.yaml" \
         "name: adminapi"                                         "MAS → adminapi listener present"
+    assert_contains "mas/config/config.yaml" \
+        "enabled: true"                                          "MAS → open registration enabled"
+    assert_contains "mas/config/config.yaml" \
+        "require_email: false"                                   "MAS → no email required (local, no SMTP)"
 
     # Element Web config (heredoc format has spaces: `"key": "value"`)
     assert_file "element/config/config.json" "element/config/config.json generated"
@@ -402,6 +406,8 @@ assert_quickstart_configs() {
     assert_contains "mas/config/config.yaml"  "name: adminapi"                        "MAS → adminapi listener"
     assert_contains "mas/config/config.yaml"  "public_base: 'https://${auth_domain}/'" "MAS → public_base"
     assert_contains "mas/config/config.yaml"  "issuer: 'https://${auth_domain}/'"     "MAS → issuer"
+    assert_contains "mas/config/config.yaml"  "enabled: true"                         "MAS → open registration enabled"
+    assert_contains "mas/config/config.yaml"  "require_email: false"                  "MAS → no email required (no SMTP)"
 
     assert_file "element/config/config.json"  "element/config/config.json generated"
 
@@ -514,7 +520,8 @@ info "Running deploy.sh production mode (piped stdin, SKIP_START=true)"
 #  [13] Matrix server address:         (empty → 10.0.1.10)
 #  [14] Authelia server address:       (empty → 10.0.1.20)
 #  [15] Let's Encrypt email:           (empty → admin@example.com)
-printf '%s\n' "2" "n" "n" "" "n" "example.com" "" "" "" "" "" "1" "" "" "" \
+#  [16] Configure SMTP?                n  (open registration, no email verification)
+printf '%s\n' "2" "n" "n" "" "n" "example.com" "" "" "" "" "" "1" "" "" "" "n" \
     | SKIP_START=true bash deploy.sh
 
 header "Production Caddyfile assertions"
@@ -527,12 +534,22 @@ assert_not_contains "caddy/Caddyfile.production" "handle_path /account/"       "
 assert_contains     "caddy/Caddyfile.production" '"m.authentication"'          "Caddyfile.production → well-known includes m.authentication"
 assert_contains     "caddy/Caddyfile.production" "Access-Control-Allow-Origin" "Caddyfile.production → well-known has CORS header"
 
+header "Production MAS registration assertions"
+assert_file "mas/config/config.yaml"                                           "mas/config/config.yaml generated (production)"
+assert_contains "mas/config/config.yaml" "enabled: true"                       "MAS → open registration enabled"
+assert_contains "mas/config/config.yaml" "require_email: false"                "MAS → no email required (no SMTP configured)"
+
 # Scenario Q — quickstart.sh config generation
 section "Q · quickstart.sh  (single-machine, config only)"
 teardown_stack
 cleanup_configs
 info "Running quickstart.sh (piped stdin, SKIP_START=true)"
-printf '%s\n' "example.test" "test@example.test" "n" \
+# Stdin answers in prompt order:
+#   [1] Domain:                    example.test
+#   [2] Let's Encrypt email:       test@example.test
+#   [3] Enable Element Call?       n
+#   [4] Configure SMTP?            n  (open registration, no email verification)
+printf '%s\n' "example.test" "test@example.test" "n" "n" \
     | SKIP_START=true bash quickstart.sh
 assert_quickstart_configs "example.test"
 if [[ "$SKIP_INTEGRATION" != "true" ]]; then
