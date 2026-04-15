@@ -441,18 +441,36 @@ ${MATRIX_DOMAIN} {
 }
 
 ${AUTH_DOMAIN} {
+    # OIDC Discovery
     @disco path /.well-known/openid-configuration
     handle @disco {
         header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Methods "GET, OPTIONS"
+        header Access-Control-Allow-Headers "*"
         reverse_proxy mas:8080 {
             header_up Host {http.request.host}
             header_up X-Forwarded-Host {http.request.host}
         }
     }
 
-    @oauth path /oauth2/*
-    route @oauth {
+    # OAuth2 CORS preflight — must come before the proxy routes
+    @oauth_preflight {
+        method OPTIONS
+        path /oauth2/*
+    }
+    handle @oauth_preflight {
         header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Methods "GET, POST, OPTIONS"
+        header Access-Control-Allow-Headers "Authorization, Content-Type, Accept"
+        respond 204
+    }
+
+    # OAuth2 endpoints
+    @oauth path /oauth2/*
+    handle @oauth {
+        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Methods "GET, POST, OPTIONS"
+        header Access-Control-Allow-Headers "Authorization, Content-Type, Accept"
         reverse_proxy mas:8080 {
             header_up Host {http.request.host}
             header_up X-Forwarded-Host {http.request.host}
