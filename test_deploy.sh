@@ -507,14 +507,14 @@ run_scenario() {
 
     # Stdin answers in prompt order:
     #   [1] Deployment type:                1  (local)
-    #   [2] Include Authelia?               n
+    #   [2] SSO provider choice:            (empty → 1=None)
     #   [3] Enable Element Call?            n
     #   [4] Allow open registration?        $reg_choice
     #   [5] Custom Docker registry prefix:  (empty → default)
     #   [6] Use hardened images?            n
     #   [7] SERVER_NAME choice:             $sn_choice  (1=TLD, 2=subdomain)
     #   [8] Press Enter to continue:        (empty)
-    printf '%s\n' "1" "n" "n" "$reg_choice" "" "n" "$sn_choice" "" \
+    printf '%s\n' "1" "" "n" "$reg_choice" "" "n" "$sn_choice" "" \
         | bash deploy.sh
 
     assert_configs "$expected_sn" "$open_reg"
@@ -575,7 +575,7 @@ cleanup_configs
 info "Running deploy.sh production mode (piped stdin, SKIP_START=true)"
 # Stdin answers in prompt order:
 #   [1] Deployment type:               2  (production)
-#   [2] Include Authelia?              n
+#   [2] SSO provider choice:           (empty → 1=None)
 #   [3] Enable Element Call?           n
 #   [4] Allow open registration?       n  (default: closed)
 #   [5] Custom Docker registry prefix: (empty)
@@ -590,7 +590,7 @@ info "Running deploy.sh production mode (piped stdin, SKIP_START=true)"
 #  [14] Matrix server address:         (empty → 10.0.1.10)
 #  [15] Authelia server address:       (empty → 10.0.1.20)
 #  [16] Let's Encrypt email:           (empty → admin@example.com)
-printf '%s\n' "2" "n" "n" "n" "" "n" "example.com" "" "" "" "" "" "1" "" "" "" \
+printf '%s\n' "2" "" "n" "n" "" "n" "example.com" "" "" "" "" "" "1" "" "" "" \
     | SKIP_START=true bash deploy.sh
 
 header "Production Caddyfile assertions"
@@ -647,14 +647,14 @@ cleanup_configs
 info "Running deploy.sh with open registration=y (piped stdin, SKIP_START=true)"
 # Stdin answers in prompt order:
 #   [1] Deployment type:                1  (local)
-#   [2] Include Authelia?               n
+#   [2] SSO provider choice:            (empty → 1=None)
 #   [3] Enable Element Call?            n
 #   [4] Allow open registration?        y  ← testing the enabled path
 #   [5] Custom Docker registry prefix:  (empty)
 #   [6] Use hardened images?            n
 #   [7] SERVER_NAME choice:             1  (TLD)
 #   [8] Press Enter to continue:        (empty)
-printf '%s\n' "1" "n" "n" "y" "" "n" "1" "" \
+printf '%s\n' "1" "" "n" "y" "" "n" "1" "" \
     | SKIP_START=true bash deploy.sh
 assert_configs "example.test" "true"
 
@@ -665,14 +665,14 @@ cleanup_configs
 info "Running deploy.sh with Element Call=y (piped stdin, SKIP_START=true)"
 # Stdin answers in prompt order:
 #   [1] Deployment type:                1  (local)
-#   [2] Include Authelia?               n
+#   [2] SSO provider choice:            (empty → 1=None)
 #   [3] Enable Element Call?            y  ← testing Element Call path
 #   [4] Allow open registration?        n
 #   [5] Custom Docker registry prefix:  (empty)
 #   [6] Use hardened images?            n
 #   [7] SERVER_NAME choice:             1  (TLD)
 #   [8] Press Enter to continue:        (empty)
-printf '%s\n' "1" "n" "y" "n" "" "n" "1" "" \
+printf '%s\n' "1" "" "y" "n" "" "n" "1" "" \
     | SKIP_START=true bash deploy.sh
 header "Element Call config assertions"
 assert_file "livekit/livekit.yaml"                                        "livekit/livekit.yaml generated"
@@ -686,6 +686,46 @@ run_scenario \
     "1" \
     "example.test" \
     "y"
+
+# Scenario S — custom OIDC provider (config only)
+section "S · Custom OIDC provider  (config only)"
+teardown_stack
+cleanup_configs
+info "Running deploy.sh with custom OIDC=3 (piped stdin, SKIP_START=true)"
+# Stdin answers in prompt order:
+#   [1] Deployment type:                1  (local)
+#   [2] SSO provider choice:            3  (custom OIDC)
+#   [3] OIDC issuer URL:                https://auth.example.test/app/o/matrix/
+#   [4] OIDC client ID:                 test-client-id
+#   [5] OIDC client secret:             test-client-secret
+#   [6] Enable Element Call?            n
+#   [7] Custom Docker registry prefix:  (empty)
+#   [8] Use hardened images?            n
+#   [9] SERVER_NAME choice:             1  (TLD)
+#  [10] Press Enter to continue:        (empty)
+printf '%s\n' "1" "3" "https://auth.example.test/app/o/matrix/" "test-client-id" "test-client-secret" "n" "" "n" "1" "" \
+    | SKIP_START=true bash deploy.sh
+header "Custom OIDC config assertions"
+assert_file "mas/config/config.yaml"                              "mas/config/config.yaml generated"
+assert_contains "mas/config/config.yaml" \
+    "issuer: 'https://auth.example.test/app/o/matrix/'"         "MAS → custom OIDC issuer present"
+assert_contains "mas/config/config.yaml" \
+    "client_id: 'test-client-id'"                               "MAS → custom OIDC client_id present"
+assert_contains "mas/config/config.yaml" \
+    "client_secret: 'test-client-secret'"                       "MAS → custom OIDC client_secret present"
+assert_contains "mas/config/config.yaml" \
+    "upstream_oauth2:"                                          "MAS → upstream_oauth2 block present"
+assert_contains "mas/config/config.yaml" \
+    "preferred_username"                                        "MAS → localpart template uses preferred_username"
+assert_contains "mas/config/config.yaml" \
+    "passwords:"                                                "MAS → passwords block present"
+assert_not_contains "mas/config/config.yaml" \
+    "enabled: true"                                             "MAS → passwords not enabled (SSO handles auth)"
+assert_not_contains "mas/config/config.yaml" \
+    "authelia"                                                  "MAS → no Authelia config when using custom OIDC"
+assert_file ".env"                                              ".env generated"
+assert_contains ".env" "OIDC_ISSUER_URL=https://auth.example.test/app/o/matrix/" ".env → OIDC_ISSUER_URL set"
+assert_contains ".env" "OIDC_CLIENT_ID=test-client-id"          ".env → OIDC_CLIENT_ID set"
 
 trap - EXIT
 cleanup_on_exit

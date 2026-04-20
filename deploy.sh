@@ -132,29 +132,46 @@ else
 fi
 
 # ============================================================================
-# AUTHELIA SSO SELECTION
+# SSO / OIDC PROVIDER SELECTION
 # ============================================================================
-echo -e "${CYAN}Include Authelia SSO?${NC}"
+echo -e "${CYAN}Upstream SSO / OIDC provider:${NC}"
 echo ""
-echo -e "  ${GREEN}Yes)${NC} Use Authelia as upstream OAuth provider"
-echo -e "       → Full SSO with 2FA support"
-echo -e "       → Users authenticate through Authelia"
-echo -e "       → Additional authentication layer"
+echo -e "  ${GREEN}1)${NC} None      — MAS handles authentication directly"
+echo -e "             → Simpler setup, password-based auth"
 echo ""
-echo -e "  ${GREEN}No)${NC}  MAS handles authentication directly"
-echo -e "       → Simpler setup, fewer moving parts"
-echo -e "       → MAS manages users directly"
-echo -e "       → Password-based authentication"
+echo -e "  ${GREEN}2)${NC} Authelia  — full SSO with 2FA"
+echo -e "             → Users authenticate through Authelia"
+echo -e "             → Additional auth layer with MFA policies"
 echo ""
-read -p "Include Authelia? [y/N]: " INCLUDE_AUTHELIA
+echo -e "  ${GREEN}3)${NC} Other OIDC — Authentik, Keycloak, Zitadel, etc."
+echo -e "             → Any OIDC-compliant provider"
+echo -e "             → No extra containers required"
+echo ""
+read -p "Choose [1/2/3, default: 1]: " _sso_choice
 
-if [[ "$INCLUDE_AUTHELIA" =~ ^[Yy]$ ]]; then
-    USE_AUTHELIA=true
-    echo -e "${GREEN}✓${NC} Authelia SSO will be included"
-else
-    USE_AUTHELIA=false
-    echo -e "${GREEN}✓${NC} MAS will handle authentication directly (no Authelia)"
-fi
+USE_AUTHELIA=false
+USE_CUSTOM_OIDC=false
+OIDC_ISSUER_URL=""
+OIDC_CLIENT_ID=""
+OIDC_CLIENT_SECRET=""
+
+case "${_sso_choice}" in
+    2)
+        USE_AUTHELIA=true
+        echo -e "${GREEN}✓${NC} Authelia SSO will be included"
+        ;;
+    3)
+        USE_CUSTOM_OIDC=true
+        echo ""
+        read -p "OIDC issuer URL (e.g. https://auth.example.com/application/o/matrix/): " OIDC_ISSUER_URL
+        read -p "OIDC client ID: " OIDC_CLIENT_ID
+        read -p "OIDC client secret: " OIDC_CLIENT_SECRET
+        echo -e "${GREEN}✓${NC} Custom OIDC provider configured"
+        ;;
+    *)
+        echo -e "${GREEN}✓${NC} MAS will handle authentication directly"
+        ;;
+esac
 echo ""
 
 # ============================================================================
@@ -183,8 +200,8 @@ echo ""
 # ============================================================================
 # OPEN REGISTRATION
 # ============================================================================
-if [[ "$USE_AUTHELIA" == true ]]; then
-    # Authelia controls user provisioning — password registration prompt is not applicable
+if [[ "$USE_AUTHELIA" == true || "$USE_CUSTOM_OIDC" == true ]]; then
+    # SSO provider controls user provisioning — password registration prompt is not applicable
     OPEN_REGISTRATION=false
 else
     echo -e "${CYAN}Allow open user registration?${NC}"
@@ -560,6 +577,17 @@ LIVEKIT_SECRET=${LIVEKIT_SECRET}
 EOF
 fi
 
+# Add custom OIDC variables
+if [[ "$USE_CUSTOM_OIDC" == true ]]; then
+    cat >> .env << EOF
+
+# Custom OIDC provider (configured via deploy.sh)
+OIDC_ISSUER_URL=${OIDC_ISSUER_URL}
+OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
+OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET}
+EOF
+fi
+
 # Telegram bridge credentials placeholder (obtain from https://my.telegram.org)
 if ! grep -q "TELEGRAM_API_ID" .env 2>/dev/null; then
     cat >> .env << 'ENVEOF'
@@ -836,8 +864,47 @@ account:
   password_recovery_enabled: false
   account_deactivation_allowed: true
 EOF
+elif [[ "$USE_CUSTOM_OIDC" == true ]]; then
+    # With custom OIDC: Use external upstream OAuth2 provider
+    cat >> mas/config/config.yaml << EOF
+
+upstream_oauth2:
+  providers:
+    - id: '01HQW90Z35CMXFJWQPHC3BGZGQ'
+      issuer: '${OIDC_ISSUER_URL}'
+      client_id: '${OIDC_CLIENT_ID}'
+      client_secret: '${OIDC_CLIENT_SECRET}'
+      scope: 'openid profile email offline_access'
+      token_endpoint_auth_method: 'client_secret_basic'
+      fetch_userinfo: true
+      claims_imports:
+        localpart:
+          action: force
+          template: '{{ user.preferred_username }}'
+        displayname:
+          action: suggest
+          template: '{{ user.name | default(user.preferred_username) }}'
+        email:
+          action: force
+          template: '{{ user.email }}'
+          set_email_verification: always
+
+matrix:
+  homeserver: '${SERVER_NAME}'
+  endpoint: 'http://synapse:8008'
+  secret: '${SYNAPSE_SHARED_SECRET}'
+
+passwords:
+  enabled: false
+
+account:
+  password_registration_enabled: false
+  password_change_allowed: true
+  password_recovery_enabled: false
+  account_deactivation_allowed: true
+EOF
 else
-    # Without Authelia: MAS handles authentication directly
+    # Without SSO: MAS handles authentication directly
     cat >> mas/config/config.yaml << EOF
 
 matrix:
@@ -906,6 +973,8 @@ EOF
 
 if [[ "$USE_AUTHELIA" == true ]]; then
     print_status "MAS configuration created (with Authelia upstream provider)"
+elif [[ "$USE_CUSTOM_OIDC" == true ]]; then
+    print_status "MAS configuration created (with custom OIDC provider: ${OIDC_ISSUER_URL})"
 else
     print_status "MAS configuration created (password authentication enabled)"
 fi
