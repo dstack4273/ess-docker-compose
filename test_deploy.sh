@@ -556,6 +556,15 @@ cd "$(dirname "$(realpath "$0")")"  # ensure we're in the repo root
 setup_sudo_shim
 check_prereqs
 
+# ─── Static file sanity checks (no Docker needed) ────────────────────────────
+section "Static · docker-compose.yml integrity"
+# Issue #19: element-admin must use SERVER_NAME (not MATRIX_DOMAIN) so MXIDs resolve
+# correctly in TLD mode where SERVER_NAME != MATRIX_DOMAIN.
+assert_contains "docker-compose.yml" \
+    'SERVER_NAME: "${SERVER_NAME}"'  "docker-compose.yml → element-admin uses SERVER_NAME not MATRIX_DOMAIN"
+assert_not_contains "docker-compose.yml" \
+    'SERVER_NAME: "${MATRIX_DOMAIN}"' "docker-compose.yml → element-admin does not use MATRIX_DOMAIN"
+
 # Scenario A — TLD identity:       @user:example.test
 run_scenario \
     "A · TLD identity  (@user:example.test)" \
@@ -679,6 +688,8 @@ assert_file "livekit/livekit.yaml"                                        "livek
 assert_contains     "livekit/livekit.yaml"     "auto_create: false"       "LiveKit → room.auto_create: false"
 assert_not_contains "element/config/config.json" "participant_limit"      "Element config → no participant_limit"
 assert_contains     "element/config/config.json" "element_call"           "Element config → element_call block present"
+# Issue #20: LIVEKIT_SECRET must be pure hex (go-jose requires it; base64 causes JWT signing errors)
+assert_matches ".env" "^LIVEKIT_SECRET=[0-9a-f]{64}$"                    ".env → LIVEKIT_SECRET is 64-char hex"
 
 # Scenario C — open registration enabled with live stack (endpoint tests)
 run_scenario \
