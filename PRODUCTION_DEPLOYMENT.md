@@ -346,14 +346,38 @@ docker compose -f docker-compose.production.yml pull
 docker compose -f docker-compose.production.yml up -d
 ```
 
-### 4. Review Permissions
+### 4. Registration Policy
+
+Control who can sign up in `mas/config/config.yaml`:
 
 ```yaml
-# In MAS config (mas/config/config.yaml)
 policy:
   registration:
-    enabled: false  # Disable open registration in production
-    require_email: true
+    enabled: true        # true = anyone can register (like matrix.org)
+                         # false = admin-only account creation
+    require_email: false # false = open signup, no email needed
+                         # true = email verification required (needs SMTP configured)
+```
+
+After editing, restart MAS: `docker compose restart mas`
+
+**Adding SMTP for email verification** (optional but recommended for public servers):
+
+```yaml
+email:
+  from: '"Matrix" <noreply@yourdomain.com>'
+  reply_to: '"Matrix Support" <support@yourdomain.com>'
+  transport: smtp
+  hostname: 'smtp.yourdomain.com'
+  port: 587
+  mode: starttls
+  username: 'your-smtp-user'
+  password: 'your-smtp-password'
+
+policy:
+  registration:
+    enabled: true
+    require_email: true  # flip to true once SMTP is working
 ```
 
 ### 5. PostgreSQL Security
