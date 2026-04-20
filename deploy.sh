@@ -464,10 +464,9 @@ mkdir -p appservices
 print_status "Directory structure created"
 echo ""
 
-# Step 1.5 (cont.): Create livekit directory if needed
-if [[ "$USE_ELEMENT_CALL" == true ]]; then
-    mkdir -p livekit
-fi
+# Step 1.5 (cont.): Ensure livekit directory exists with correct ownership
+mkdir -p livekit
+sudo chown "$(id -u):$(id -g)" livekit 2>/dev/null || true
 
 # Step 2: Generate secure secrets
 echo -e "${BLUE}[2/12] Generating secure secrets...${NC}"
@@ -922,7 +921,6 @@ if [[ "$USE_ELEMENT_CALL" == true ]]; then
     ELEMENT_CALL_BLOCK=',
     "element_call": {
         "url": "https://'"${CALL_DOMAIN}"'",
-        "participant_limit": 8,
         "brand": "Element Call"
     }'
 else
@@ -975,6 +973,9 @@ rtc:
   port_range_start: 50100
   port_range_end: 50200
   use_external_ip: true
+
+room:
+  auto_create: false
 
 keys:
   livekit-key: ${LIVEKIT_SECRET}
@@ -1057,6 +1058,7 @@ enable_registration: false
 allow_guest_access: false
 allow_public_rooms_without_auth: false
 allow_public_rooms_over_federation: false
+enable_authenticated_media: true
 
 # MAS Integration (Synapse 1.136+ stable config — replaces deprecated experimental_features.msc3861)
 matrix_authentication_service:
@@ -1120,7 +1122,7 @@ if [[ "$DEPLOYMENT_MODE" == "local" ]]; then
     # Pre-build JSON blobs for the local Caddyfile (single-line, no literal \n)
     if [[ "$USE_ELEMENT_CALL" == true ]]; then
         LOCAL_WELLKNOWN_JSON="{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\"},\"m.authentication\":{\"issuer\":\"https://${AUTH_DOMAIN}/\"},\"org.matrix.msc4143.rtc_foci\":[{\"type\":\"livekit\",\"livekit_service_url\":\"https://${RTC_DOMAIN}/livekit/jwt\"}]}"
-        LOCAL_ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${SERVER_NAME}\"}},\"default_server_name\":\"${SERVER_NAME}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true,\"feature_element_call_video_rooms\":true},\"element_call\":{\"url\":\"https://${CALL_DOMAIN}\",\"participant_limit\":8,\"brand\":\"Element Call\"}}"
+        LOCAL_ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${SERVER_NAME}\"}},\"default_server_name\":\"${SERVER_NAME}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true,\"feature_element_call_video_rooms\":true},\"element_call\":{\"url\":\"https://${CALL_DOMAIN}\",\"brand\":\"Element Call\"}}"
     else
         LOCAL_WELLKNOWN_JSON="{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\"},\"m.authentication\":{\"issuer\":\"https://${AUTH_DOMAIN}/\"}}"
         LOCAL_ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${SERVER_NAME}\"}},\"default_server_name\":\"${SERVER_NAME}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true}}"
@@ -1634,7 +1636,7 @@ if [[ "$DEPLOYMENT_MODE" == "production" ]]; then
     # Pre-build conditional JSON blobs for the Caddyfile
     if [[ "$USE_ELEMENT_CALL" == true ]]; then
         PROD_WELLKNOWN_JSON="{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\"},\"m.authentication\":{\"issuer\":\"https://${AUTH_DOMAIN}/\"},\"org.matrix.msc4143.rtc_foci\":[{\"type\":\"livekit\",\"livekit_service_url\":\"https://${RTC_DOMAIN}/livekit/jwt\"}]}"
-        PROD_ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${SERVER_NAME}\"}},\"default_server_name\":\"${SERVER_NAME}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true,\"feature_element_call_video_rooms\":true},\"element_call\":{\"url\":\"https://${CALL_DOMAIN}\",\"participant_limit\":8,\"brand\":\"Element Call\"}}"
+        PROD_ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${SERVER_NAME}\"}},\"default_server_name\":\"${SERVER_NAME}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true,\"feature_element_call_video_rooms\":true},\"element_call\":{\"url\":\"https://${CALL_DOMAIN}\",\"brand\":\"Element Call\"}}"
     else
         PROD_WELLKNOWN_JSON="{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\"},\"m.authentication\":{\"issuer\":\"https://${AUTH_DOMAIN}/\"}}"
         PROD_ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${SERVER_NAME}\"}},\"default_server_name\":\"${SERVER_NAME}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true}}"

@@ -95,7 +95,8 @@ cleanup_configs() {
     info "Removing generated configs..."
     rm -f .env mas-signing.key authelia_private.pem
     rm -f caddy/Caddyfile caddy/Caddyfile.production
-    rm -f livekit/livekit.yaml
+    sudo rm -rf livekit 2>/dev/null || true
+    mkdir -p livekit
     rm -f appservices/doublepuppet.yaml
     # These may be root-owned from docker run or previous deploys
     sudo rm -f mas/config/config.yaml 2>/dev/null || true
@@ -255,6 +256,8 @@ assert_configs() {
         "allow_public_rooms_without_auth: false"             "Synapse → public rooms not public"
     assert_contains "synapse/data/homeserver.yaml" \
         "allow_public_rooms_over_federation: false"          "Synapse → public rooms not over federation"
+    assert_contains "synapse/data/homeserver.yaml" \
+        "enable_authenticated_media: true"                   "Synapse → authenticated media enabled"
 
     # ── Caddyfile security ───────────────────────────────────────────────────
     assert_contains "caddy/Caddyfile" \
@@ -473,6 +476,7 @@ assert_quickstart_configs() {
     assert_contains "synapse/data/homeserver.yaml" "allow_guest_access: false"                   "Synapse → guest access disabled"
     assert_contains "synapse/data/homeserver.yaml" "allow_public_rooms_without_auth: false"      "Synapse → public rooms blocked"
     assert_contains "synapse/data/homeserver.yaml" "allow_public_rooms_over_federation: false"   "Synapse → public rooms over federation blocked"
+    assert_contains "synapse/data/homeserver.yaml" "enable_authenticated_media: true"            "Synapse → authenticated media enabled"
 
     assert_file "caddy/Caddyfile"             "caddy/Caddyfile generated"
     assert_contains     "caddy/Caddyfile" "admin localhost:2019"       "Caddyfile → admin API localhost only"
@@ -651,6 +655,28 @@ info "Running deploy.sh with open registration=y (piped stdin, SKIP_START=true)"
 printf '%s\n' "1" "n" "n" "y" "" "n" "1" "" \
     | SKIP_START=true bash deploy.sh
 assert_configs "example.test" "true"
+
+# Scenario E — Element Call enabled (config only, validates livekit.yaml + no participant_limit)
+section "E · Element Call enabled  (config only)"
+teardown_stack
+cleanup_configs
+info "Running deploy.sh with Element Call=y (piped stdin, SKIP_START=true)"
+# Stdin answers in prompt order:
+#   [1] Deployment type:                1  (local)
+#   [2] Include Authelia?               n
+#   [3] Enable Element Call?            y  ← testing Element Call path
+#   [4] Allow open registration?        n
+#   [5] Custom Docker registry prefix:  (empty)
+#   [6] Use hardened images?            n
+#   [7] SERVER_NAME choice:             1  (TLD)
+#   [8] Press Enter to continue:        (empty)
+printf '%s\n' "1" "n" "y" "n" "" "n" "1" "" \
+    | SKIP_START=true bash deploy.sh
+header "Element Call config assertions"
+assert_file "livekit/livekit.yaml"                                        "livekit/livekit.yaml generated"
+assert_contains     "livekit/livekit.yaml"     "auto_create: false"       "LiveKit → room.auto_create: false"
+assert_not_contains "element/config/config.json" "participant_limit"      "Element config → no participant_limit"
+assert_contains     "element/config/config.json" "element_call"           "Element config → element_call block present"
 
 # Scenario C — open registration enabled with live stack (endpoint tests)
 run_scenario \

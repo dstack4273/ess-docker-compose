@@ -230,7 +230,6 @@ if $USE_ELEMENT_CALL; then
     ELEMENT_CALL_BLOCK=',
     "element_call": {
         "url": "https://'"${CALL_DOMAIN}"'",
-        "participant_limit": 8,
         "brand": "Element Call"
     }'
 else
@@ -273,6 +272,9 @@ rtc:
   port_range_start: 50100
   port_range_end: 50200
   use_external_ip: true
+
+room:
+  auto_create: false
 
 keys:
   livekit-key: ${LIVEKIT_SECRET}
@@ -320,6 +322,7 @@ enable_registration: false
 allow_guest_access: false
 allow_public_rooms_without_auth: false
 allow_public_rooms_over_federation: false
+enable_authenticated_media: true
 
 matrix_authentication_service:
   enabled: true
@@ -358,7 +361,7 @@ info "Writing Caddyfile..."
 
 if $USE_ELEMENT_CALL; then
     WELLKNOWN_JSON="{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\"},\"m.authentication\":{\"issuer\":\"https://${AUTH_DOMAIN}/\"},\"org.matrix.msc4143.rtc_foci\":[{\"type\":\"livekit\",\"livekit_service_url\":\"https://${RTC_DOMAIN}/livekit/jwt\"}]}"
-    ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${MATRIX_DOMAIN}\"}},\"default_server_name\":\"${MATRIX_DOMAIN}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true,\"feature_element_call_video_rooms\":true},\"element_call\":{\"url\":\"https://${CALL_DOMAIN}\",\"participant_limit\":8,\"brand\":\"Element Call\"}}"
+    ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${MATRIX_DOMAIN}\"}},\"default_server_name\":\"${MATRIX_DOMAIN}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true,\"feature_element_call_video_rooms\":true},\"element_call\":{\"url\":\"https://${CALL_DOMAIN}\",\"brand\":\"Element Call\"}}"
 else
     WELLKNOWN_JSON="{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\"},\"m.authentication\":{\"issuer\":\"https://${AUTH_DOMAIN}/\"}}"
     ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${MATRIX_DOMAIN}\"}},\"default_server_name\":\"${MATRIX_DOMAIN}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true}}"
