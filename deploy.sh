@@ -39,19 +39,21 @@ echo ""
 # ============================================================================
 echo -e "${CYAN}Select Deployment Type:${NC}"
 echo ""
-echo -e "  ${GREEN}1)${NC} Local Testing (All-in-One)"
+echo -e "  ${GREEN}1)${NC} Local Testing"
 echo -e "     → Everything on one machine with self-signed certificates"
-echo -e "     → Uses *.localhost domains"
-echo -e "     → Caddy + Authelia + Matrix stack together"
+echo -e "     → Uses *.example.test domains (add to /etc/hosts)"
 echo ""
-echo -e "  ${GREEN}2)${NC} Production (Distributed)"
-echo -e "     → Services on separate machines for security"
-echo -e "     → Machine 1: Caddy (SSL termination)"
-echo -e "     → Machine 2: Authelia (SSO)"
-echo -e "     → Machine 3: Matrix stack (Synapse, Element, MAS, bridges)"
-echo -e "     → Real domains with Let's Encrypt certificates"
+echo -e "  ${GREEN}2)${NC} Production (Single-Server)"
+echo -e "     → All services on one machine with Let's Encrypt certificates"
+echo -e "     → Real domains — point DNS to this machine"
+echo -e "     → Simplest production setup"
 echo ""
-read -p "Enter choice [1 or 2]: " DEPLOYMENT_TYPE
+echo -e "  ${GREEN}3)${NC} Production (Distributed)"
+echo -e "     → Services on separate machines"
+echo -e "     → Caddy and Authelia run on dedicated hosts"
+echo -e "     → Generates config files to copy to each machine"
+echo ""
+read -p "Enter choice [1/2/3]: " DEPLOYMENT_TYPE
 
 if [[ "$DEPLOYMENT_TYPE" == "1" ]]; then
     DEPLOYMENT_MODE="local"
@@ -61,9 +63,14 @@ if [[ "$DEPLOYMENT_TYPE" == "1" ]]; then
     DOCKER_COMPOSE_CMD="sudo docker compose --project-directory ."
     echo -e "${GREEN}✓${NC} Selected: Local Testing Mode"
 elif [[ "$DEPLOYMENT_TYPE" == "2" ]]; then
+    DEPLOYMENT_MODE="production-single"
+    COMPOSE_FILE="docker-compose.yml"
+    DOCKER_COMPOSE_CMD="sudo docker compose --project-directory ."
+    echo -e "${GREEN}✓${NC} Selected: Production (Single-Server)"
+elif [[ "$DEPLOYMENT_TYPE" == "3" ]]; then
     DEPLOYMENT_MODE="production"
     COMPOSE_FILE="docker-compose.yml"
-    echo -e "${GREEN}✓${NC} Selected: Production Mode"
+    echo -e "${GREEN}✓${NC} Selected: Production (Distributed)"
 else
     echo -e "${RED}✗${NC} Invalid choice. Exiting."
     exit 1
@@ -364,13 +371,13 @@ if [[ "$DEPLOYMENT_MODE" == "local" ]]; then
     echo ""
 
 else
-    # Production deployment
+    # Production deployment (single-server or distributed)
     echo -e "${CYAN}Production Deployment Configuration${NC}"
     echo ""
 
     # Base domain
     read -p "Enter your base domain (e.g., example.com): " DOMAIN_BASE
-    AUTHELIA_COOKIE_DOMAIN="${DOMAIN_BASE}"  # Production uses the base domain
+    AUTHELIA_COOKIE_DOMAIN="${DOMAIN_BASE}"
 
     # Matrix subdomain
     read -p "Enter Matrix subdomain [default: matrix]: " MATRIX_SUBDOMAIN
@@ -419,39 +426,45 @@ else
         SERVER_NAME="${DOMAIN_BASE}"
     fi
 
-    echo ""
-    echo -e "${CYAN}Backend Server Addresses (for Caddyfile):${NC}"
-    echo -e "  ${YELLOW}Enter IP addresses or hostnames${NC}"
-    echo ""
+    if [[ "$DEPLOYMENT_MODE" == "production" ]]; then
+        echo ""
+        echo -e "${CYAN}Backend Server Addresses (for Caddyfile):${NC}"
+        echo -e "  ${YELLOW}Enter IP addresses or hostnames${NC}"
+        echo ""
 
-    # Matrix server address (IP or hostname)
-    read -p "Matrix server address (IP or hostname): " MATRIX_SERVER_IP
-    MATRIX_SERVER_IP=${MATRIX_SERVER_IP:-10.0.1.10}
+        # Matrix server address (IP or hostname)
+        read -p "Matrix server address (IP or hostname): " MATRIX_SERVER_IP
+        MATRIX_SERVER_IP=${MATRIX_SERVER_IP:-10.0.1.10}
 
-    # Authelia server address (IP or hostname)
-    read -p "Authelia server address (IP or hostname): " AUTHELIA_SERVER_IP
-    AUTHELIA_SERVER_IP=${AUTHELIA_SERVER_IP:-10.0.1.20}
+        # Authelia server address (IP or hostname)
+        read -p "Authelia server address (IP or hostname): " AUTHELIA_SERVER_IP
+        AUTHELIA_SERVER_IP=${AUTHELIA_SERVER_IP:-10.0.1.20}
+    fi
 
-    # Email for Let's Encrypt (used in generated Caddyfile template)
+    # Email for Let's Encrypt (both production modes)
     read -p "Email for Let's Encrypt [default: admin@${DOMAIN_BASE}]: " LETSENCRYPT_EMAIL
     LETSENCRYPT_EMAIL=${LETSENCRYPT_EMAIL:-admin@${DOMAIN_BASE}}
 
     echo ""
     echo -e "${GREEN}✓${NC} Configuration Summary:"
-    echo -e "  Base Domain:       ${DOMAIN_BASE}"
-    echo -e "  Server Name:       ${SERVER_NAME}  (@user:${SERVER_NAME})"
-    echo -e "  Matrix:            https://${MATRIX_DOMAIN}"
-    echo -e "  Element:           https://${ELEMENT_DOMAIN}"
-    echo -e "  MAS:               https://${AUTH_DOMAIN}"
-    echo -e "  Authelia:          https://${AUTHELIA_DOMAIN}"
-    if [[ "$USE_ELEMENT_CALL" == true ]]; then
-        echo -e "  Element Call RTC:  https://${RTC_DOMAIN}"
+    echo -e "  Base Domain:  ${DOMAIN_BASE}"
+    echo -e "  Server Name:  ${SERVER_NAME}  (@user:${SERVER_NAME})"
+    echo -e "  Matrix:       https://${MATRIX_DOMAIN}"
+    echo -e "  Element:      https://${ELEMENT_DOMAIN}"
+    echo -e "  MAS:          https://${AUTH_DOMAIN}"
+    if [[ "$DEPLOYMENT_MODE" == "production" ]]; then
+        echo -e "  Authelia:     https://${AUTHELIA_DOMAIN}"
     fi
-    echo -e "  Matrix Backend:    ${MATRIX_SERVER_IP}"
-    echo -e "  Authelia Backend:  ${AUTHELIA_SERVER_IP}"
-    echo ""
-    print_info "Note: Generated Caddyfile will use these backend addresses"
-    print_info "      Copy generated configs from authelia/config/ to your Authelia server"
+    if [[ "$USE_ELEMENT_CALL" == true ]]; then
+        echo -e "  Element Call: https://${CALL_DOMAIN}"
+        echo -e "  LiveKit RTC:  https://${RTC_DOMAIN}"
+    fi
+    if [[ "$DEPLOYMENT_MODE" == "production" ]]; then
+        echo -e "  Matrix Backend:   ${MATRIX_SERVER_IP}"
+        echo -e "  Authelia Backend: ${AUTHELIA_SERVER_IP}"
+        print_info "Note: Generated Caddyfile will use these backend addresses"
+        print_info "      Copy generated configs from authelia/config/ to your Authelia server"
+    fi
     echo ""
 fi
 
@@ -1553,6 +1566,222 @@ EOF
     echo ""
 fi
 
+# Step 12.6: Generate single-server Caddyfile (production-single mode only)
+if [[ "$DEPLOYMENT_MODE" == "production-single" ]]; then
+    echo -e "${BLUE}[12.6/13] Generating single-server Caddyfile...${NC}"
+
+    # Pre-build JSON blobs
+    if [[ "$USE_ELEMENT_CALL" == true ]]; then
+        SINGLE_WELLKNOWN_JSON="{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\"},\"m.authentication\":{\"issuer\":\"https://${AUTH_DOMAIN}/\"},\"org.matrix.msc4143.rtc_foci\":[{\"type\":\"livekit\",\"livekit_service_url\":\"https://${RTC_DOMAIN}/livekit/jwt\"}]}"
+        SINGLE_ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${SERVER_NAME}\"}},\"default_server_name\":\"${SERVER_NAME}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true,\"feature_element_call_video_rooms\":true},\"element_call\":{\"url\":\"https://${CALL_DOMAIN}\",\"brand\":\"Element Call\"}}"
+    else
+        SINGLE_WELLKNOWN_JSON="{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\"},\"m.authentication\":{\"issuer\":\"https://${AUTH_DOMAIN}/\"}}"
+        SINGLE_ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${SERVER_NAME}\"}},\"default_server_name\":\"${SERVER_NAME}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true}}"
+    fi
+
+    cat > caddy/Caddyfile << 'CADDYEOF'
+# Single-Server Production Caddyfile for Matrix Stack
+# Let's Encrypt certificates — requires valid DNS pointing to this machine
+# Auto-generated by deploy.sh — do not edit manually
+
+{
+    # Let's Encrypt email for certificate notifications
+CADDYEOF
+    echo "    email ${LETSENCRYPT_EMAIL}" >> caddy/Caddyfile
+    cat >> caddy/Caddyfile << 'CADDYEOF'
+    # Enable admin API (localhost only)
+    admin localhost:2019
+}
+CADDYEOF
+
+    cat >> caddy/Caddyfile << EOF
+
+# =========================
+# Matrix Homeserver
+# =========================
+${MATRIX_DOMAIN} {
+    # Well-known client endpoint
+    @wk path /.well-known/matrix/client
+    handle @wk {
+        header Content-Type application/json
+        header Access-Control-Allow-Origin "*"
+        respond \`${SINGLE_WELLKNOWN_JSON}\` 200
+    }
+
+    # Well-known server endpoint (federation)
+    @wk_server path /.well-known/matrix/server
+    handle @wk_server {
+        header Content-Type application/json
+        respond \`{"m.server":"${MATRIX_DOMAIN}:443"}\` 200
+    }
+
+    # CORS preflight
+    @preflight {
+        method OPTIONS
+        path_regexp ^/_matrix/.*\$
+    }
+    handle @preflight {
+        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        header Access-Control-Allow-Headers "Authorization, Content-Type, Accept"
+        header Access-Control-Max-Age "86400"
+        respond 204
+    }
+
+    # MAS compat endpoints (login/logout/refresh/register)
+    @compat path /_matrix/client/v3/login* /_matrix/client/v3/logout* /_matrix/client/v3/refresh* /_matrix/client/v3/register* /_matrix/client/r0/login* /_matrix/client/r0/logout* /_matrix/client/r0/refresh* /_matrix/client/r0/register*
+    handle @compat {
+        header Access-Control-Allow-Origin "*"
+        reverse_proxy mas:8080 {
+            header_up Host {http.request.host}
+            header_up X-Forwarded-Host {http.request.host}
+            header_down -Access-Control-Allow-Origin
+        }
+    }
+
+    # Block public access to Synapse admin API
+    handle /_synapse/admin* {
+        respond "Forbidden" 403
+    }
+
+    # Everything else to Synapse
+    @matrix path_regexp ^/_matrix/.*\$
+    handle @matrix {
+        header Access-Control-Allow-Origin "*"
+        reverse_proxy synapse:8008 {
+            header_down -Access-Control-Allow-Origin
+        }
+    }
+
+    handle {
+        reverse_proxy synapse:8008
+    }
+}
+
+# =========================
+# MAS (OIDC)
+# =========================
+${AUTH_DOMAIN} {
+    # OIDC Discovery
+    @disco path /.well-known/openid-configuration
+    handle @disco {
+        header ?Access-Control-Allow-Origin "*"
+        reverse_proxy mas:8080 {
+            header_up Host {http.request.host}
+            header_up X-Forwarded-Host {http.request.host}
+        }
+    }
+
+    # OAuth2 endpoints
+    @oauth path /oauth2/*
+    route @oauth {
+        header ?Access-Control-Allow-Origin "*"
+        reverse_proxy mas:8080 {
+            header_up Host {http.request.host}
+            header_up X-Forwarded-Host {http.request.host}
+        }
+    }
+
+    # Account portal (handle, not handle_path — preserves /account/ prefix for MAS SPA routing)
+    handle /account/* {
+        reverse_proxy mas:8080 {
+            header_up Host {http.request.host}
+            header_up X-Forwarded-Host {http.request.host}
+        }
+    }
+
+    handle {
+        reverse_proxy mas:8080 {
+            header_up Host {http.request.host}
+            header_up X-Forwarded-Host {http.request.host}
+        }
+    }
+
+    handle_errors {
+        header ?Access-Control-Allow-Origin "*"
+    }
+}
+
+# =========================
+# Element Web Client
+# =========================
+${ELEMENT_DOMAIN} {
+    @cfg path /config.json /config.${ELEMENT_DOMAIN}.json
+    handle @cfg {
+        header Content-Type application/json
+        header Cache-Control no-store
+        respond \`${SINGLE_ELEMENT_CFG_JSON}\` 200
+    }
+
+    handle {
+        reverse_proxy element:80
+    }
+}
+
+# =========================
+# Element Admin
+# =========================
+${ADMIN_DOMAIN} {
+    handle {
+        reverse_proxy element-admin:8080
+    }
+}
+EOF
+
+    # Append identity domain well-known block if SERVER_NAME differs from MATRIX_DOMAIN
+    if [[ "$SERVER_NAME" != "$MATRIX_DOMAIN" ]]; then
+        cat >> caddy/Caddyfile << EOF
+
+# =========================
+# Identity Domain (well-known delegation)
+# =========================
+${SERVER_NAME} {
+    @wk path /.well-known/matrix/client
+    handle @wk {
+        header Content-Type application/json
+        header Access-Control-Allow-Origin "*"
+        respond \`${SINGLE_WELLKNOWN_JSON}\` 200
+    }
+
+    @wk_server path /.well-known/matrix/server
+    handle @wk_server {
+        header Content-Type application/json
+        respond \`{"m.server":"${MATRIX_DOMAIN}:443"}\` 200
+    }
+}
+EOF
+    fi
+
+    # Append Element Call blocks if enabled
+    if [[ "$USE_ELEMENT_CALL" == true ]]; then
+        cat >> caddy/Caddyfile << EOF
+
+# =========================
+# Element Call (LiveKit)
+# =========================
+${RTC_DOMAIN} {
+    handle_path /livekit/jwt* {
+        reverse_proxy lk-jwt-service:8080
+    }
+
+    handle_path /livekit/sfu* {
+        reverse_proxy livekit:7880
+    }
+}
+
+# =========================
+# Element Call Frontend
+# =========================
+${CALL_DOMAIN} {
+    reverse_proxy element-call:8080
+}
+EOF
+    fi
+
+    print_status "Single-server Caddyfile generated: caddy/Caddyfile"
+    echo ""
+fi
+
 # Step 13: Fix directory permissions
 echo -e "${BLUE}[13/14] Fixing directory permissions...${NC}"
 chmod 755 postgres/init postgres/config 2>/dev/null || true
@@ -1621,6 +1850,9 @@ fi
 
 # Build compose profile flags
 COMPOSE_PROFILES=""
+if [[ "$DEPLOYMENT_MODE" == "production-single" ]]; then
+    COMPOSE_PROFILES="${COMPOSE_PROFILES} --profile single-machine"
+fi
 if [[ "$USE_AUTHELIA" == true ]]; then
     COMPOSE_PROFILES="${COMPOSE_PROFILES} --profile authelia"
 fi
@@ -2005,8 +2237,42 @@ if [[ "$DEPLOYMENT_MODE" == "local" ]]; then
         echo -e "  7. Start chatting!"
         echo ""
     fi
+elif [[ "$DEPLOYMENT_MODE" == "production-single" ]]; then
+    echo -e "${BLUE}Access Points (once DNS is live):${NC}"
+    echo -e "  • Element Web:  https://${ELEMENT_DOMAIN}"
+    echo -e "  • Matrix API:   https://${MATRIX_DOMAIN}"
+    echo -e "  • MAS (Auth):   https://${AUTH_DOMAIN}"
+    if [[ "$USE_ELEMENT_CALL" == true ]]; then
+        echo -e "  • Element Call: https://${CALL_DOMAIN}"
+    fi
+    echo ""
+    echo -e "${CYAN}DNS — point all domains to this server's IP:${NC}"
+    echo -e "  • ${MATRIX_DOMAIN}"
+    echo -e "  • ${ELEMENT_DOMAIN}"
+    echo -e "  • ${ADMIN_DOMAIN}"
+    echo -e "  • ${AUTH_DOMAIN}"
+    if [[ "$USE_ELEMENT_CALL" == true ]]; then
+        echo -e "  • ${RTC_DOMAIN}"
+        echo -e "  • ${CALL_DOMAIN}"
+    fi
+    if [[ "$SERVER_NAME" != "$MATRIX_DOMAIN" ]]; then
+        echo -e "  • ${SERVER_NAME}  (identity domain)"
+    fi
+    echo ""
+    echo -e "${CYAN}Firewall — ensure these ports are open:${NC}"
+    echo -e "  • TCP 80 and 443  (HTTP + HTTPS, required for Let's Encrypt)"
+    if [[ "$USE_ELEMENT_CALL" == true ]]; then
+        echo -e "  • TCP 7881        (LiveKit WebRTC fallback)"
+        echo -e "  • UDP 50100-50200 (LiveKit media)"
+    fi
+    echo ""
+    echo -e "${BLUE}Next Steps:${NC}"
+    echo -e "  1. Set DNS records above to point to this machine"
+    echo -e "  2. Caddy will obtain Let's Encrypt certificates automatically on first request"
+    echo -e "  3. Go to https://${ELEMENT_DOMAIN} and create your first account"
+    echo ""
 else
-    # Production mode
+    # Production distributed mode
     echo -e "${BLUE}Matrix Server Deployed!${NC}"
     echo ""
     echo -e "${MAGENTA}Production Deployment - Next Steps:${NC}"

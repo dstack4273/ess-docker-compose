@@ -574,7 +574,7 @@ teardown_stack
 cleanup_configs
 info "Running deploy.sh production mode (piped stdin, SKIP_START=true)"
 # Stdin answers in prompt order:
-#   [1] Deployment type:               2  (production)
+#   [1] Deployment type:               3  (production distributed)
 #   [2] SSO provider choice:           (empty → 1=None)
 #   [3] Enable Element Call?           n
 #   [4] Allow open registration?       n  (default: closed)
@@ -590,7 +590,7 @@ info "Running deploy.sh production mode (piped stdin, SKIP_START=true)"
 #  [14] Matrix server address:         (empty → 10.0.1.10)
 #  [15] Authelia server address:       (empty → 10.0.1.20)
 #  [16] Let's Encrypt email:           (empty → admin@example.com)
-printf '%s\n' "2" "" "n" "n" "" "n" "example.com" "" "" "" "" "" "1" "" "" "" \
+printf '%s\n' "3" "" "n" "n" "" "n" "example.com" "" "" "" "" "" "1" "" "" "" \
     | SKIP_START=true bash deploy.sh
 
 header "Production Caddyfile assertions"
@@ -686,6 +686,41 @@ run_scenario \
     "1" \
     "example.test" \
     "y"
+
+# Scenario PS — production single-server (config only)
+section "PS · Production single-server  (config only)"
+teardown_stack
+cleanup_configs
+info "Running deploy.sh production single-server mode (piped stdin, SKIP_START=true)"
+# Stdin answers in prompt order:
+#   [1] Deployment type:               2  (production single-server)
+#   [2] SSO provider choice:           (empty → 1=None)
+#   [3] Enable Element Call?           n
+#   [4] Allow open registration?       n
+#   [5] Custom Docker registry prefix: (empty)
+#   [6] Use hardened images?           n
+#   [7] Base domain:                   example.com
+#   [8] Matrix subdomain:              (empty → matrix)
+#   [9] Element subdomain:             (empty → element)
+#  [10] Admin subdomain:               (empty → admin)
+#  [11] Auth subdomain:                (empty → auth)
+#  [12] Authelia subdomain:            (empty → authelia)
+#  [13] SERVER_NAME choice:            1  (TLD: @user:example.com)
+#  [14] Let's Encrypt email:           (empty → admin@example.com)  ← no server IP prompts
+printf '%s\n' "2" "" "n" "n" "" "n" "example.com" "" "" "" "" "" "1" "" \
+    | SKIP_START=true bash deploy.sh
+
+header "Production single-server Caddyfile assertions"
+assert_file "caddy/Caddyfile"                                              "caddy/Caddyfile generated (single-server)"
+assert_not_contains "caddy/Caddyfile" "tls internal"                       "Caddyfile → no tls internal (Let's Encrypt)"
+assert_contains "caddy/Caddyfile" "email "                                 "Caddyfile → Let's Encrypt email present"
+assert_contains "caddy/Caddyfile" "admin localhost:2019"                   "Caddyfile → admin API localhost only"
+assert_contains "caddy/Caddyfile" "matrix.example.com {"                   "Caddyfile → matrix domain block (no :443)"
+assert_contains "caddy/Caddyfile" "/_synapse/admin"                        "Caddyfile → synapse admin block present"
+assert_contains "caddy/Caddyfile" "header_up X-Forwarded-Host"             "Caddyfile → MAS proxy forwards X-Forwarded-Host"
+assert_contains "caddy/Caddyfile" '"m.authentication"'                     "Caddyfile → well-known includes m.authentication"
+assert_contains "caddy/Caddyfile" "/_matrix/client/v3/register"            "Caddyfile → register proxied to MAS"
+assert_not_contains "caddy/Caddyfile.production" "Production Caddyfile"    "caddy/Caddyfile.production not generated in single-server mode"
 
 # Scenario S — custom OIDC provider (config only)
 section "S · Custom OIDC provider  (config only)"
