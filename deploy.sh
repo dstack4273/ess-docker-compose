@@ -1399,7 +1399,7 @@ ${ELEMENT_DOMAIN}:443 {
     tls internal
 
     # Serve config.json with proper settings
-    @cfg path /config.json
+    @cfg path /config.json /config.${ELEMENT_DOMAIN}.json
     handle @cfg {
         header Content-Type application/json
         header Cache-Control no-store
@@ -1791,7 +1791,7 @@ ${AUTHELIA_DOMAIN} {
 # =========================
 ${ELEMENT_DOMAIN} {
     # Serve config with proper settings
-    @cfg path /config.json
+    @cfg path /config.json /config.${ELEMENT_DOMAIN}.json
     handle @cfg {
         header Content-Type application/json
         header Cache-Control no-store
@@ -1993,17 +1993,11 @@ else
     echo ""
 fi
 echo -e "${BLUE}Useful Commands:${NC}"
-if [[ "$USE_AUTHELIA" == true ]]; then
-    echo -e "  • View logs:        $DOCKER_COMPOSE_CMD --profile authelia logs -f"
-    echo -e "  • Stop stack:       $DOCKER_COMPOSE_CMD --profile authelia down"
-    echo -e "  • Restart service:  $DOCKER_COMPOSE_CMD --profile authelia restart <service>"
-    echo -e "  • View status:      $DOCKER_COMPOSE_CMD --profile authelia ps"
-else
-    echo -e "  • View logs:        $DOCKER_COMPOSE_CMD logs -f"
-    echo -e "  • Stop stack:       $DOCKER_COMPOSE_CMD down"
-    echo -e "  • Restart service:  $DOCKER_COMPOSE_CMD restart <service>"
-    echo -e "  • View status:      $DOCKER_COMPOSE_CMD ps"
-fi
+_CMD="$DOCKER_COMPOSE_CMD -f ${COMPOSE_FILE}${COMPOSE_PROFILES}"
+echo -e "  • View logs:        ${_CMD} logs -f"
+echo -e "  • Stop stack:       ${_CMD} down"
+echo -e "  • Restart service:  ${_CMD} restart <service>"
+echo -e "  • View status:      ${_CMD} ps"
 echo ""
 echo -e "${BLUE}Generated Files:${NC}"
 echo -e "  • .env                              - Environment variables"

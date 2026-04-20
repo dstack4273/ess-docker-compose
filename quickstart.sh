@@ -462,7 +462,7 @@ ${AUTH_DOMAIN} {
 }
 
 ${ELEMENT_DOMAIN} {
-    @cfg path /config.json
+    @cfg path /config.json /config.${ELEMENT_DOMAIN}.json
     handle @cfg {
         header Content-Type application/json
         header Cache-Control no-store
@@ -556,6 +556,8 @@ echo ""
 echo "To set up messaging bridges (WhatsApp, Signal, Telegram):"
 echo "  ./setup-bridges.sh"
 echo ""
-echo "Logs:  docker compose logs -f"
-echo "Stop:  docker compose --profile single-machine down"
+_QS_CMD="sudo docker compose --profile single-machine"
+if $USE_ELEMENT_CALL; then _QS_CMD="${_QS_CMD} --profile element-call"; fi
+echo "Logs:  ${_QS_CMD} logs -f"
+echo "Stop:  ${_QS_CMD} down"
 echo ""

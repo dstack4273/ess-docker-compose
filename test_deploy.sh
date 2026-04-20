@@ -261,6 +261,8 @@ assert_configs() {
 
     # ── Caddyfile security ───────────────────────────────────────────────────
     assert_contains "caddy/Caddyfile" \
+        "/config.element.example.test.json"                 "Caddyfile → Element config domain-namespaced path"
+    assert_contains "caddy/Caddyfile" \
         "admin localhost:2019"                               "Caddyfile → admin API localhost only"
     assert_contains "caddy/Caddyfile" \
         "header_up X-Forwarded-Host"                        "Caddyfile → MAS proxy forwards X-Forwarded-Host"
