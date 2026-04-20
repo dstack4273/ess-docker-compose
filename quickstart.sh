@@ -177,6 +177,17 @@ matrix:
 
 passwords:
   enabled: true
+  minimum_complexity: 3
+  schemes:
+    - version: 1
+      algorithm: argon2id
+
+account:
+  password_registration_enabled: ${OPEN_REGISTRATION}
+  password_registration_email_required: false
+  password_change_allowed: true
+  password_recovery_enabled: false
+  account_deactivation_allowed: true
 
 email:
   from: '"Matrix" <noreply@${DOMAIN}>'
@@ -186,9 +197,9 @@ email:
   mode: plain
 
 policy:
-  registration:
-    enabled: ${OPEN_REGISTRATION}
-    require_email: false
+  data:
+    registration:
+      enabled: ${OPEN_REGISTRATION}
 
 clients:
   - client_id: '01HQW90Z35CMXFJWQPHC3BGZGQ'

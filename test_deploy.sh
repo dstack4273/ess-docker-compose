@@ -220,16 +220,31 @@ assert_configs() {
     assert_contains "mas/config/config.yaml" \
         "endpoint: 'http://synapse:8008'"                    "MAS → synapse endpoint correct"
     if [[ "$open_reg" == "true" ]]; then
-        assert_contains     "mas/config/config.yaml" \
-            "enabled: true"                                  "MAS → open registration enabled"
-        assert_not_contains "mas/config/config.yaml" \
-            "enabled: false"                                 "MAS → no 'enabled: false' when open registration on"
+        assert_contains "mas/config/config.yaml" \
+            "      enabled: true"                            "MAS → open registration enabled"
     else
-        assert_contains     "mas/config/config.yaml" \
-            "enabled: false"                                 "MAS → open registration disabled by default"
+        assert_contains "mas/config/config.yaml" \
+            "      enabled: false"                           "MAS → open registration disabled by default"
     fi
     assert_contains "mas/config/config.yaml" \
-        "require_email: false"                               "MAS → require_email: false"
+        "algorithm: argon2id"                                "MAS → argon2id scheme present"
+    assert_contains "mas/config/config.yaml" \
+        "minimum_complexity: 3"                              "MAS → minimum_complexity set"
+    assert_contains "mas/config/config.yaml" \
+        "password_registration_email_required: false"        "MAS → email not required for registration"
+    assert_contains "mas/config/config.yaml" \
+        "password_change_allowed: true"                      "MAS → password change allowed"
+    if [[ "$open_reg" == "true" ]]; then
+        assert_contains "mas/config/config.yaml" \
+            "password_registration_enabled: true"            "MAS → password_registration_enabled true"
+    else
+        assert_contains "mas/config/config.yaml" \
+            "password_registration_enabled: false"           "MAS → password_registration_enabled false"
+    fi
+    assert_contains "mas/config/config.yaml" \
+        "policy:"                                            "MAS → policy block present"
+    assert_contains "mas/config/config.yaml" \
+        "data:"                                              "MAS → policy uses data: nesting"
 
     # ── Synapse config correctness ───────────────────────────────────────────
     assert_contains "synapse/data/homeserver.yaml" \
@@ -444,8 +459,12 @@ assert_quickstart_configs() {
     assert_contains "mas/config/config.yaml"  "name: adminapi"                        "MAS → adminapi listener"
     assert_contains "mas/config/config.yaml"  "public_base: 'https://${auth_domain}/'" "MAS → public_base"
     assert_contains "mas/config/config.yaml"  "issuer: 'https://${auth_domain}/'"     "MAS → issuer"
-    assert_contains "mas/config/config.yaml"  "enabled: false"                        "MAS → open registration disabled"
-    assert_contains "mas/config/config.yaml"  "require_email: false"                  "MAS → require_email: false"
+    assert_contains "mas/config/config.yaml"  "enabled: false"                                   "MAS → open registration disabled"
+    assert_contains "mas/config/config.yaml"  "algorithm: argon2id"                              "MAS → argon2id scheme present"
+    assert_contains "mas/config/config.yaml"  "minimum_complexity: 3"                            "MAS → minimum_complexity set"
+    assert_contains "mas/config/config.yaml"  "password_registration_email_required: false"      "MAS → email not required"
+    assert_contains "mas/config/config.yaml"  "password_registration_enabled: false"             "MAS → password_registration_enabled false"
+    assert_contains "mas/config/config.yaml"  "data:"                                            "MAS → policy uses data: nesting"
 
     assert_file "element/config/config.json"  "element/config/config.json generated"
 
@@ -605,12 +624,12 @@ printf '%s\n' "example.test" "test@example.test" "n" "y" \
     | SKIP_START=true bash quickstart.sh
 header "Quickstart open registration assertions"
 assert_file "mas/config/config.yaml" "mas/config/config.yaml generated"
-assert_contains     "mas/config/config.yaml" \
-    "enabled: true"          "MAS → open registration enabled when y chosen (quickstart)"
-assert_not_contains "mas/config/config.yaml" \
-    "enabled: false"         "MAS → no 'enabled: false' when open registration on (quickstart)"
-assert_contains     "mas/config/config.yaml" \
-    "require_email: false"   "MAS → require_email: false (quickstart open reg)"
+assert_contains "mas/config/config.yaml" \
+    "      enabled: true"    "MAS → open registration enabled when y chosen (quickstart)"
+assert_contains "mas/config/config.yaml" \
+    "password_registration_email_required: false"  "MAS → email not required (quickstart open reg)"
+assert_contains "mas/config/config.yaml" \
+    "password_registration_enabled: true"          "MAS → password_registration_enabled true (quickstart)"
 if [[ "$SKIP_INTEGRATION" != "true" ]]; then
     warn "Quickstart endpoint tests skipped (stack not started in SKIP_START mode)"
 fi

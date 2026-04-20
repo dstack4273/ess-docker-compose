@@ -829,7 +829,13 @@ matrix:
   secret: '${SYNAPSE_SHARED_SECRET}'
 
 passwords:
-  enabled: false  # Using Authelia SSO instead
+  enabled: false
+
+account:
+  password_registration_enabled: false
+  password_change_allowed: true
+  password_recovery_enabled: false
+  account_deactivation_allowed: true
 EOF
 else
     # Without Authelia: MAS handles authentication directly
@@ -841,7 +847,18 @@ matrix:
   secret: '${SYNAPSE_SHARED_SECRET}'
 
 passwords:
-  enabled: true  # MAS handles password authentication directly
+  enabled: true
+  minimum_complexity: 3
+  schemes:
+    - version: 1
+      algorithm: argon2id
+
+account:
+  password_registration_enabled: ${OPEN_REGISTRATION}
+  password_registration_email_required: false
+  password_change_allowed: true
+  password_recovery_enabled: false
+  account_deactivation_allowed: true
 EOF
 fi
 
@@ -862,9 +879,9 @@ branding:
   tos_uri: 'https://${AUTH_DOMAIN}/terms'
 
 policy:
-  registration:
-    enabled: ${OPEN_REGISTRATION}
-    require_email: false
+  data:
+    registration:
+      enabled: ${OPEN_REGISTRATION}
 
 clients:
   # Element Web client (public)
