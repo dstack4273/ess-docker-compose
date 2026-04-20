@@ -93,7 +93,7 @@ mkdir -p caddy/{data,config}
 mkdir -p livekit
 mkdir -p bridges/{telegram,whatsapp,signal}/config
 mkdir -p appservices
-chmod 755 mas/config element/config
+chmod 755 element/config
 
 # ── .env ─────────────────────────────────────────────────────────────────────
 
@@ -124,6 +124,7 @@ AUTHELIA_JWT_SECRET=
 AUTHELIA_SESSION_SECRET=
 AUTHELIA_STORAGE_ENCRYPTION_KEY=
 EOF
+chmod 600 .env
 ok ".env written"
 
 # ── MAS config ───────────────────────────────────────────────────────────────
@@ -219,6 +220,8 @@ clients:
     client_auth_method: client_secret_basic
     client_secret: '${SYNAPSE_CLIENT_SECRET}'
 EOF
+chmod 700 mas/config
+chmod 600 mas/config/config.yaml
 ok "MAS config written"
 
 # ── Element Web config ────────────────────────────────────────────────────────

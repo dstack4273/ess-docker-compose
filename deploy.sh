@@ -172,7 +172,8 @@ case "${_sso_choice}" in
         echo ""
         read -p "OIDC issuer URL (e.g. https://auth.example.com/application/o/matrix/): " OIDC_ISSUER_URL
         read -p "OIDC client ID: " OIDC_CLIENT_ID
-        read -p "OIDC client secret: " OIDC_CLIENT_SECRET
+        read -s -p "OIDC client secret: " OIDC_CLIENT_SECRET
+        echo
         echo -e "${GREEN}✓${NC} Custom OIDC provider configured"
         ;;
     *)
@@ -1786,7 +1787,11 @@ fi
 echo -e "${BLUE}[13/14] Fixing directory permissions...${NC}"
 chmod 755 postgres/init postgres/config 2>/dev/null || true
 chmod 644 postgres/init/*.sql 2>/dev/null || true
-chmod 755 authelia/config mas/config element/config 2>/dev/null || true
+chmod 755 authelia/config element/config 2>/dev/null || true
+# Secret files: owner-read only
+chmod 700 mas/config 2>/dev/null || true
+chmod 600 mas/config/config.yaml 2>/dev/null || true
+chmod 600 .env 2>/dev/null || true
 print_status "Permissions fixed"
 echo ""
 
