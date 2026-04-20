@@ -385,7 +385,7 @@ ${MATRIX_DOMAIN} {
         respond 204
     }
 
-    @compat path /_matrix/client/v3/login* /_matrix/client/v3/logout* /_matrix/client/v3/refresh* /_matrix/client/r0/login* /_matrix/client/r0/logout* /_matrix/client/r0/refresh*
+    @compat path /_matrix/client/v3/login* /_matrix/client/v3/logout* /_matrix/client/v3/refresh* /_matrix/client/v3/register* /_matrix/client/r0/login* /_matrix/client/r0/logout* /_matrix/client/r0/refresh* /_matrix/client/r0/register*
     handle @compat {
         header Access-Control-Allow-Origin "*"
         reverse_proxy mas:8080 {

@@ -141,6 +141,7 @@ assert_matches() {
 # ─── Config-file assertions (no Docker needed) ────────────────────────────────
 assert_configs() {
     local server_name="$1"
+    local open_reg="${2:-false}"   # "true" when open registration was chosen
     local matrix_domain="matrix.example.test"
 
     header "Config assertions  (SERVER_NAME=${server_name})"
@@ -218,8 +219,17 @@ assert_configs() {
         "issuer: 'https://${auth_domain}/'"                  "MAS → issuer uses auth domain"
     assert_contains "mas/config/config.yaml" \
         "endpoint: 'http://synapse:8008'"                    "MAS → synapse endpoint correct"
+    if [[ "$open_reg" == "true" ]]; then
+        assert_contains     "mas/config/config.yaml" \
+            "enabled: true"                                  "MAS → open registration enabled"
+        assert_not_contains "mas/config/config.yaml" \
+            "enabled: false"                                 "MAS → no 'enabled: false' when open registration on"
+    else
+        assert_contains     "mas/config/config.yaml" \
+            "enabled: false"                                 "MAS → open registration disabled by default"
+    fi
     assert_contains "mas/config/config.yaml" \
-        "enabled: false"                                     "MAS → open registration disabled by default"
+        "require_email: false"                               "MAS → require_email: false"
 
     # ── Synapse config correctness ───────────────────────────────────────────
     assert_contains "synapse/data/homeserver.yaml" \
@@ -238,6 +248,8 @@ assert_configs() {
         "header_up X-Forwarded-Host"                        "Caddyfile → MAS proxy forwards X-Forwarded-Host"
     assert_contains "caddy/Caddyfile" \
         "/_synapse/admin"                                   "Caddyfile → synapse admin route present"
+    assert_contains "caddy/Caddyfile" \
+        "/_matrix/client/v3/register"                       "Caddyfile → register proxied to MAS"
 
     # ── Well-known completeness ──────────────────────────────────────────────
     assert_contains "caddy/Caddyfile" \
@@ -262,6 +274,19 @@ curl_local() {
 curl_local_status() {
     local domain="$1" path="$2"
     local -a args=(-s --max-time 15 --resolve "${domain}:443:127.0.0.1" -o /dev/null -w "%{http_code}")
+    if [[ -f mas/certs/caddy-ca.crt ]]; then
+        args+=(--cacert mas/certs/caddy-ca.crt)
+    else
+        args+=(-k)
+    fi
+    curl "${args[@]}" "https://${domain}${path}" 2>/dev/null || echo "000"
+}
+
+# POST JSON and return only the HTTP status code
+curl_local_post_status() {
+    local domain="$1" path="$2" data="${3:-{\}}"
+    local -a args=(-s --max-time 15 --resolve "${domain}:443:127.0.0.1" -o /dev/null -w "%{http_code}"
+                   -X POST -H "Content-Type: application/json" -d "$data")
     if [[ -f mas/certs/caddy-ca.crt ]]; then
         args+=(--cacert mas/certs/caddy-ca.crt)
     else
@@ -299,6 +324,7 @@ setup_mas_ca() {
 # ─── Live endpoint assertions ─────────────────────────────────────────────────
 assert_endpoints() {
     local server_name="$1"
+    local open_reg="${2:-false}"   # "true" when open registration was chosen
     local matrix_domain="matrix.example.test"
 
     header "Endpoint tests  (SERVER_NAME=${server_name})"
@@ -385,6 +411,20 @@ assert_endpoints() {
     echo "$elem" | grep -qi "element" \
         && pass "Element Web root serves HTML" \
         || fail "Element Web root (no Element content in response)"
+
+    # Registration endpoint — must be proxied to MAS (not left to Synapse which always 403s)
+    # With policy closed: MAS returns 403 M_FORBIDDEN
+    # With policy open:   MAS returns 401 with interactive-auth flows (not 403)
+    local reg_code; reg_code=$(curl_local_post_status "$matrix_domain" "/_matrix/client/v3/register" '{"kind":"user"}')
+    if [[ "$open_reg" == "true" ]]; then
+        [[ "$reg_code" != "403" ]] \
+            && pass "/_matrix/client/v3/register open → MAS returns non-403 (flows available, got ${reg_code})" \
+            || fail "/_matrix/client/v3/register should not be 403 when open (got 403 — policy not applied or wrong proxy)"
+    else
+        [[ "$reg_code" == "403" ]] \
+            && pass "/_matrix/client/v3/register closed → MAS returns 403" \
+            || fail "/_matrix/client/v3/register should be 403 when closed (got HTTP ${reg_code})"
+    fi
 }
 
 # ─── Quickstart config assertions ────────────────────────────────────────────
@@ -405,6 +445,7 @@ assert_quickstart_configs() {
     assert_contains "mas/config/config.yaml"  "public_base: 'https://${auth_domain}/'" "MAS → public_base"
     assert_contains "mas/config/config.yaml"  "issuer: 'https://${auth_domain}/'"     "MAS → issuer"
     assert_contains "mas/config/config.yaml"  "enabled: false"                        "MAS → open registration disabled"
+    assert_contains "mas/config/config.yaml"  "require_email: false"                  "MAS → require_email: false"
 
     assert_file "element/config/config.json"  "element/config/config.json generated"
 
@@ -420,6 +461,7 @@ assert_quickstart_configs() {
     assert_contains     "caddy/Caddyfile" "header_up X-Forwarded-Host" "Caddyfile → MAS proxy forwards X-Forwarded-Host"
     assert_contains     "caddy/Caddyfile" "handle /account/"           "Caddyfile → /account/ uses handle (preserves prefix)"
     assert_not_contains "caddy/Caddyfile" "handle_path /account/"      "Caddyfile → /account/ not handle_path"
+    assert_contains     "caddy/Caddyfile" "/_matrix/client/v3/register" "Caddyfile → register proxied to MAS"
 }
 
 # ─── Run one full scenario ────────────────────────────────────────────────────
@@ -427,6 +469,10 @@ run_scenario() {
     local name="$1"
     local sn_choice="$2"       # "1" = TLD, "2" = subdomain
     local expected_sn="$3"
+    local reg_choice="${4:-n}" # "y" = open registration, "n" = closed (default)
+
+    local open_reg="false"
+    [[ "$reg_choice" == "y" ]] && open_reg="true"
 
     section "$name"
     teardown_stack
@@ -438,20 +484,20 @@ run_scenario() {
     #   [1] Deployment type:                1  (local)
     #   [2] Include Authelia?               n
     #   [3] Enable Element Call?            n
-    #   [4] Allow open registration?        n  (default: closed)
+    #   [4] Allow open registration?        $reg_choice
     #   [5] Custom Docker registry prefix:  (empty → default)
     #   [6] Use hardened images?            n
     #   [7] SERVER_NAME choice:             $sn_choice  (1=TLD, 2=subdomain)
     #   [8] Press Enter to continue:        (empty)
-    printf '%s\n' "1" "n" "n" "n" "" "n" "$sn_choice" "" \
+    printf '%s\n' "1" "n" "n" "$reg_choice" "" "n" "$sn_choice" "" \
         | bash deploy.sh
 
-    assert_configs "$expected_sn"
+    assert_configs "$expected_sn" "$open_reg"
 
     if [[ "$SKIP_INTEGRATION" == "true" ]]; then
         warn "Skipping endpoint tests (SKIP_INTEGRATION=true)"
     else
-        assert_endpoints "$expected_sn"
+        assert_endpoints "$expected_sn" "$open_reg"
     fi
 }
 
@@ -529,8 +575,9 @@ assert_contains     "caddy/Caddyfile.production" "/_synapse/admin"             "
 assert_contains     "caddy/Caddyfile.production" "header_up X-Forwarded-Host"  "Caddyfile.production → MAS proxy forwards X-Forwarded-Host"
 assert_contains     "caddy/Caddyfile.production" "handle /account/"            "Caddyfile.production → /account/ uses handle (preserves prefix)"
 assert_not_contains "caddy/Caddyfile.production" "handle_path /account/"       "Caddyfile.production → /account/ not handle_path"
-assert_contains     "caddy/Caddyfile.production" '"m.authentication"'          "Caddyfile.production → well-known includes m.authentication"
-assert_contains     "caddy/Caddyfile.production" "Access-Control-Allow-Origin" "Caddyfile.production → well-known has CORS header"
+assert_contains     "caddy/Caddyfile.production" '"m.authentication"'              "Caddyfile.production → well-known includes m.authentication"
+assert_contains     "caddy/Caddyfile.production" "Access-Control-Allow-Origin"    "Caddyfile.production → well-known has CORS header"
+assert_contains     "caddy/Caddyfile.production" "/_matrix/client/v3/register"    "Caddyfile.production → register proxied to MAS"
 
 # Scenario Q — quickstart.sh config generation (registration closed, default)
 section "Q · quickstart.sh  (single-machine, config only)"
@@ -558,13 +605,17 @@ printf '%s\n' "example.test" "test@example.test" "n" "y" \
     | SKIP_START=true bash quickstart.sh
 header "Quickstart open registration assertions"
 assert_file "mas/config/config.yaml" "mas/config/config.yaml generated"
-assert_contains "mas/config/config.yaml" \
-    "enabled: true"   "MAS → open registration enabled when y chosen (quickstart)"
+assert_contains     "mas/config/config.yaml" \
+    "enabled: true"          "MAS → open registration enabled when y chosen (quickstart)"
+assert_not_contains "mas/config/config.yaml" \
+    "enabled: false"         "MAS → no 'enabled: false' when open registration on (quickstart)"
+assert_contains     "mas/config/config.yaml" \
+    "require_email: false"   "MAS → require_email: false (quickstart open reg)"
 if [[ "$SKIP_INTEGRATION" != "true" ]]; then
     warn "Quickstart endpoint tests skipped (stack not started in SKIP_START mode)"
 fi
 
-# Scenario R — open registration enabled (config only)
+# Scenario R — open registration enabled (config only, no Docker)
 section "R · Open registration enabled  (config only)"
 teardown_stack
 cleanup_configs
@@ -580,12 +631,14 @@ info "Running deploy.sh with open registration=y (piped stdin, SKIP_START=true)"
 #   [8] Press Enter to continue:        (empty)
 printf '%s\n' "1" "n" "n" "y" "" "n" "1" "" \
     | SKIP_START=true bash deploy.sh
-header "Open registration assertions"
-assert_file "mas/config/config.yaml" "mas/config/config.yaml generated"
-assert_contains "mas/config/config.yaml" \
-    "enabled: true"                                              "MAS → open registration enabled when y chosen"
-assert_not_contains "mas/config/config.yaml" \
-    "enabled: false"                                             "MAS → no 'enabled: false' when open registration on"
+assert_configs "example.test" "true"
+
+# Scenario C — open registration enabled with live stack (endpoint tests)
+run_scenario \
+    "C · Open registration  (@user:example.test, live)" \
+    "1" \
+    "example.test" \
+    "y"
 
 trap - EXIT
 cleanup_on_exit

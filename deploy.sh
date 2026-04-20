@@ -480,7 +480,7 @@ SYNAPSE_SHARED_SECRET=$(generate_secret)
 DOUBLEPUPPET_AS_TOKEN=$(generate_hex_secret)
 DOUBLEPUPPET_HS_TOKEN=$(generate_hex_secret)
 if [[ "$USE_ELEMENT_CALL" == true ]]; then
-    LIVEKIT_SECRET=$(generate_secret)
+    LIVEKIT_SECRET=$(generate_hex_secret)
 fi
 print_status "Secrets generated"
 echo ""
@@ -1205,14 +1205,16 @@ ${MATRIX_DOMAIN}:443 {
         respond 204
     }
 
-    # MAS compat endpoints (login/logout/refresh) with CORS
+    # MAS compat endpoints (login/logout/refresh/register) with CORS
     @compat path \\
         /_matrix/client/v3/login* \\
         /_matrix/client/v3/logout* \\
         /_matrix/client/v3/refresh* \\
+        /_matrix/client/v3/register* \\
         /_matrix/client/r0/login* \\
         /_matrix/client/r0/logout* \\
-        /_matrix/client/r0/refresh*
+        /_matrix/client/r0/refresh* \\
+        /_matrix/client/r0/register*
     handle @compat {
         header Access-Control-Allow-Origin "*"
         header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
@@ -1678,8 +1680,8 @@ ${MATRIX_DOMAIN} {
         respond 204
     }
 
-    # MAS compat endpoints
-    @compat path /_matrix/client/v3/login* /_matrix/client/v3/logout* /_matrix/client/v3/refresh* /_matrix/client/r0/login* /_matrix/client/r0/logout* /_matrix/client/r0/refresh*
+    # MAS compat endpoints (login/logout/refresh/register)
+    @compat path /_matrix/client/v3/login* /_matrix/client/v3/logout* /_matrix/client/v3/refresh* /_matrix/client/v3/register* /_matrix/client/r0/login* /_matrix/client/r0/logout* /_matrix/client/r0/refresh* /_matrix/client/r0/register*
     handle @compat {
         header Access-Control-Allow-Origin "*"
         reverse_proxy ${MATRIX_SERVER_IP}:8080 {

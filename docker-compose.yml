@@ -83,7 +83,7 @@ services:
     container_name: matrix-element-admin
     restart: unless-stopped
     environment:
-      SERVER_NAME: "${MATRIX_DOMAIN}"
+      SERVER_NAME: "${SERVER_NAME}"
       OIDC_CLIENT_ID: "01ADMN00000000000000000000"
       OIDC_ISSUER: "https://${AUTH_DOMAIN}/"
     # Port published to host for multi-machine deployment
