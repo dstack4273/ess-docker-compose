@@ -38,7 +38,12 @@ services:
 
   # Matrix Synapse Server
   synapse:
-    image: ${SYNAPSE_IMAGE:-matrixdotorg/synapse:latest}
+    build:
+      context: .
+      dockerfile: synapse/Dockerfile
+      args:
+        SYNAPSE_IMAGE: ${SYNAPSE_IMAGE:-matrixdotorg/synapse:latest}
+    image: matrix-synapse:local
     container_name: matrix-synapse
     restart: unless-stopped
     environment:
