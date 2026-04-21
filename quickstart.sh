@@ -221,8 +221,8 @@ clients:
     client_auth_method: client_secret_basic
     client_secret: '${SYNAPSE_CLIENT_SECRET}'
 EOF
-chmod 700 mas/config
-chmod 600 mas/config/config.yaml
+chmod 755 mas/config
+chmod 644 mas/config/config.yaml
 ok "MAS config written"
 
 # ── Element Web config ────────────────────────────────────────────────────────
@@ -356,7 +356,7 @@ ok "Synapse config patched"
 info "Fixing Synapse data permissions..."
 sudo chown -R 991:991 synapse/data/
 sudo chmod 640 synapse/data/*.signing.key 2>/dev/null || true
-sudo chown -R 991:991 mas/data/
+sudo chown -R 65532:65532 mas/data/
 ok "Permissions fixed"
 
 # ── Caddyfile ─────────────────────────────────────────────────────────────────

@@ -1194,7 +1194,7 @@ EOF
 # Restore ownership to Synapse uid so the container can read/write its own data
 sudo chown -R 991:991 synapse/data/
 sudo chmod 640 synapse/data/*.signing.key 2>/dev/null || true
-sudo chown -R 991:991 mas/data/
+sudo chown -R 65532:65532 mas/data/
 print_status "Database configuration updated with current credentials"
 echo ""
 
@@ -1789,8 +1789,8 @@ chmod 755 postgres/init postgres/config 2>/dev/null || true
 chmod 644 postgres/init/*.sql 2>/dev/null || true
 chmod 755 authelia/config element/config 2>/dev/null || true
 # Secret files: owner-read only
-chmod 700 mas/config 2>/dev/null || true
-chmod 600 mas/config/config.yaml 2>/dev/null || true
+chmod 755 mas/config 2>/dev/null || true
+chmod 644 mas/config/config.yaml 2>/dev/null || true
 chmod 600 .env 2>/dev/null || true
 print_status "Permissions fixed"
 echo ""
