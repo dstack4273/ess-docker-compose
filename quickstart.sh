@@ -80,6 +80,7 @@ ok "Secrets ready"
 info "Generating MAS signing key..."
 openssl genrsa 4096 2>/dev/null | openssl pkcs8 -topk8 -nocrypt > mas-signing.key 2>/dev/null
 MAS_SIGNING_KEY=$(cat mas-signing.key)
+[[ -n "$MAS_SIGNING_KEY" ]] || fail "openssl failed to generate signing key. Is openssl installed?"
 ok "MAS signing key ready"
 echo ""
 
@@ -510,6 +511,10 @@ if [[ "${SKIP_START:-false}" == "true" ]]; then
     ok "Skipping stack start (SKIP_START=true)"
     echo ""
 else
+
+info "Building Synapse image..."
+sudo docker compose build synapse
+ok "Synapse image ready"
 
 info "Starting PostgreSQL..."
 sudo docker compose up -d postgres
