@@ -410,6 +410,10 @@ assert_endpoints() {
     echo "$oidc" | grep -q '"issuer"' \
         && pass "MAS OIDC discovery responds" \
         || fail "MAS OIDC discovery (got: '${oidc:-no response}')"
+    local oidc_cors; oidc_cors=$(curl_local_cors "$auth_domain" "/.well-known/openid-configuration" "https://element.example.test")
+    echo "$oidc_cors" | grep -qi "access-control-allow-origin:" \
+        && pass "MAS OIDC discovery CORS header returned" \
+        || fail "MAS OIDC discovery missing CORS header — OIDC login will break for web clients"
     # issuer and authorization_endpoint must use the public auth domain, not an internal hostname
     # (regression test for issue #16 — missing X-Forwarded-Host caused silent OAuth2 breakage)
     echo "$oidc" | grep -q "\"issuer\":\"https://${auth_domain}/\"" \
@@ -432,12 +436,20 @@ assert_endpoints() {
     echo "$versions" | grep -q '"versions"' \
         && pass "Synapse /_matrix/client/versions responds" \
         || fail "Synapse /_matrix/client/versions (got: '${versions:-no response}')"
+    local matrix_cors; matrix_cors=$(curl_local_cors "$matrix_domain" "/_matrix/client/versions" "https://element.example.test")
+    echo "$matrix_cors" | grep -qi "access-control-allow-origin:" \
+        && pass "/_matrix/client/versions CORS header returned" \
+        || fail "/_matrix/client/versions missing CORS header — web clients will break"
 
     # Login compat endpoint must be proxied to MAS (not return Synapse 404)
     local login; login=$(curl_local "$matrix_domain" "/_matrix/client/v3/login")
     echo "$login" | grep -qE '"flows"|"type"' \
         && pass "/_matrix/client/v3/login proxied to MAS" \
         || fail "/_matrix/client/v3/login not proxied to MAS (got: '${login:-no response}')"
+    local login_cors; login_cors=$(curl_local_cors "$matrix_domain" "/_matrix/client/v3/login" "https://element.example.test")
+    echo "$login_cors" | grep -qi "access-control-allow-origin:" \
+        && pass "/_matrix/client/v3/login CORS header returned" \
+        || fail "/_matrix/client/v3/login missing CORS header — login flow will break for web clients"
 
     # Synapse admin API must reach Synapse (server_version returns 200 unauthenticated)
     local admin_code; admin_code=$(curl_local_status "$matrix_domain" "/_synapse/admin/v1/server_version")
