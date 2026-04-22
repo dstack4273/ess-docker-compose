@@ -308,6 +308,19 @@ curl_local_status() {
 }
 
 # POST JSON and return only the HTTP status code
+# Returns response headers for a request with a custom Origin header
+curl_local_cors() {
+    local domain="$1" path="$2" origin="$3"
+    local -a args=(-sI --max-time 15 --resolve "${domain}:443:127.0.0.1"
+                   -H "Origin: ${origin}" -H "Access-Control-Request-Method: GET")
+    if [[ -f mas/certs/caddy-ca.crt ]]; then
+        args+=(--cacert mas/certs/caddy-ca.crt)
+    else
+        args+=(-k)
+    fi
+    curl "${args[@]}" "https://${domain}${path}" 2>/dev/null || true
+}
+
 curl_local_post_status() {
     local domain="$1" path="$2" data="${3:-{\}}"
     local -a args=(-s --max-time 15 --resolve "${domain}:443:127.0.0.1" -o /dev/null -w "%{http_code}"
@@ -351,6 +364,7 @@ assert_endpoints() {
     local server_name="$1"
     local open_reg="${2:-false}"   # "true" when open registration was chosen
     local matrix_domain="matrix.example.test"
+    local admin_domain="admin.example.test"
 
     header "Endpoint tests  (SERVER_NAME=${server_name})"
     info "Allowing 20s for full service initialization..."
@@ -430,6 +444,12 @@ assert_endpoints() {
     [[ "$admin_code" == "200" ]] \
         && pass "/_synapse/admin proxied to Synapse (200)" \
         || fail "/_synapse/admin not reaching Synapse (HTTP ${admin_code})"
+
+    # CORS header must be returned for admin domain origin (regression test for issue #22)
+    local admin_cors; admin_cors=$(curl_local_cors "$matrix_domain" "/_synapse/admin/v1/server_version" "https://${admin_domain}")
+    echo "$admin_cors" | grep -qi "access-control-allow-origin:.*${admin_domain}" \
+        && pass "/_synapse/admin CORS header returned for admin origin" \
+        || fail "/_synapse/admin missing CORS header in HTTP response (issue #22 regression)"
 
     # Element Web
     local elem; elem=$(curl_local "element.example.test" "/")
