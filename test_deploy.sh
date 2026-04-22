@@ -269,6 +269,11 @@ assert_configs() {
     assert_contains "caddy/Caddyfile" \
         "/_synapse/admin"                                   "Caddyfile → synapse admin route present"
     assert_contains "caddy/Caddyfile" \
+        'Access-Control-Allow-Origin "https://admin.example.test"' \
+                                                            "Caddyfile → synapse admin CORS header for Element Admin"
+    assert_not_contains "caddy/Caddyfile" \
+        'respond "Forbidden" 403'                           "Caddyfile → admin API not blocked with 403"
+    assert_contains "caddy/Caddyfile" \
         "/_matrix/client/v3/register"                       "Caddyfile → register proxied to MAS"
 
     # ── Well-known completeness ──────────────────────────────────────────────
@@ -420,11 +425,11 @@ assert_endpoints() {
         && pass "/_matrix/client/v3/login proxied to MAS" \
         || fail "/_matrix/client/v3/login not proxied to MAS (got: '${login:-no response}')"
 
-    # Synapse admin API must be blocked at Caddy (403)
+    # Synapse admin API must reach Synapse (server_version returns 200 unauthenticated)
     local admin_code; admin_code=$(curl_local_status "$matrix_domain" "/_synapse/admin/v1/server_version")
-    [[ "$admin_code" == "403" ]] \
-        && pass "/_synapse/admin blocked (403)" \
-        || fail "/_synapse/admin not blocked (HTTP ${admin_code})"
+    [[ "$admin_code" == "200" ]] \
+        && pass "/_synapse/admin proxied to Synapse (200)" \
+        || fail "/_synapse/admin not reaching Synapse (HTTP ${admin_code})"
 
     # Element Web
     local elem; elem=$(curl_local "element.example.test" "/")
@@ -482,7 +487,10 @@ assert_quickstart_configs() {
 
     assert_file "caddy/Caddyfile"             "caddy/Caddyfile generated"
     assert_contains     "caddy/Caddyfile" "admin localhost:2019"       "Caddyfile → admin API localhost only"
-    assert_contains     "caddy/Caddyfile" "/_synapse/admin"            "Caddyfile → synapse admin block present"
+    assert_contains     "caddy/Caddyfile" "/_synapse/admin"            "Caddyfile → synapse admin route present"
+    assert_contains     "caddy/Caddyfile" "Access-Control-Allow-Origin \"https://admin.${domain}\"" \
+                                                                       "Caddyfile → synapse admin CORS header for Element Admin"
+    assert_not_contains "caddy/Caddyfile" 'respond "Forbidden" 403'   "Caddyfile → admin API not blocked with 403"
     assert_contains     "caddy/Caddyfile" "header_up X-Forwarded-Host" "Caddyfile → MAS proxy forwards X-Forwarded-Host"
     assert_contains     "caddy/Caddyfile" "handle /account/"           "Caddyfile → /account/ uses handle (preserves prefix)"
     assert_not_contains "caddy/Caddyfile" "handle_path /account/"      "Caddyfile → /account/ not handle_path"
@@ -605,7 +613,10 @@ printf '%s\n' "3" "" "n" "n" "" "n" "example.com" "" "" "" "" "" "1" "" "" "" \
 header "Production Caddyfile assertions"
 assert_file "caddy/Caddyfile.production"                              "caddy/Caddyfile.production generated"
 assert_contains     "caddy/Caddyfile.production" "admin localhost:2019"        "Caddyfile.production → admin API localhost only"
-assert_contains     "caddy/Caddyfile.production" "/_synapse/admin"             "Caddyfile.production → synapse admin block present"
+assert_contains     "caddy/Caddyfile.production" "/_synapse/admin"             "Caddyfile.production → synapse admin route present"
+assert_contains     "caddy/Caddyfile.production" 'Access-Control-Allow-Origin "https://admin.example.com"' \
+                                                                              "Caddyfile.production → synapse admin CORS header for Element Admin"
+assert_not_contains "caddy/Caddyfile.production" 'respond "Forbidden" 403'   "Caddyfile.production → admin API not blocked with 403"
 assert_contains     "caddy/Caddyfile.production" "header_up X-Forwarded-Host"  "Caddyfile.production → MAS proxy forwards X-Forwarded-Host"
 assert_contains     "caddy/Caddyfile.production" "handle /account/"            "Caddyfile.production → /account/ uses handle (preserves prefix)"
 assert_not_contains "caddy/Caddyfile.production" "handle_path /account/"       "Caddyfile.production → /account/ not handle_path"
@@ -727,7 +738,10 @@ assert_not_contains "caddy/Caddyfile" "tls internal"                       "Cadd
 assert_contains "caddy/Caddyfile" "email "                                 "Caddyfile → Let's Encrypt email present"
 assert_contains "caddy/Caddyfile" "admin localhost:2019"                   "Caddyfile → admin API localhost only"
 assert_contains "caddy/Caddyfile" "matrix.example.com {"                   "Caddyfile → matrix domain block (no :443)"
-assert_contains "caddy/Caddyfile" "/_synapse/admin"                        "Caddyfile → synapse admin block present"
+assert_contains "caddy/Caddyfile" "/_synapse/admin"                        "Caddyfile → synapse admin route present"
+assert_contains "caddy/Caddyfile" 'Access-Control-Allow-Origin "https://admin.example.com"' \
+                                                                           "Caddyfile → synapse admin CORS header for Element Admin"
+assert_not_contains "caddy/Caddyfile" 'respond "Forbidden" 403'           "Caddyfile → admin API not blocked with 403"
 assert_contains "caddy/Caddyfile" "header_up X-Forwarded-Host"             "Caddyfile → MAS proxy forwards X-Forwarded-Host"
 assert_contains "caddy/Caddyfile" '"m.authentication"'                     "Caddyfile → well-known includes m.authentication"
 assert_contains "caddy/Caddyfile" "/_matrix/client/v3/register"            "Caddyfile → register proxied to MAS"

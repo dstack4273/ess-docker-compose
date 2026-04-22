@@ -420,9 +420,16 @@ ${MATRIX_DOMAIN} {
         }
     }
 
-    # Block public access to Synapse admin API
+    # Synapse admin API — CORS for Element Admin
     handle /_synapse/admin* {
-        respond "Forbidden" 403
+        header Access-Control-Allow-Origin "https://${ADMIN_DOMAIN}"
+        header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        header Access-Control-Allow-Headers "Authorization, Content-Type, Accept"
+        @preflight method OPTIONS
+        respond @preflight "" 204
+        reverse_proxy synapse:8008 {
+            header_down -Access-Control-Allow-Origin
+        }
     }
 
     handle {
