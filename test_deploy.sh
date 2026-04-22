@@ -139,6 +139,39 @@ assert_matches() {
     fi
 }
 
+# ─── Permission assertions ────────────────────────────────────────────────────
+assert_world_readable() {
+    local path="$1" desc="$2"
+    local mode; mode=$(stat -c '%a' "$path" 2>/dev/null)
+    [[ $(( 8#$mode & 7 )) -ge 4 ]] \
+        && pass "$desc readable (mode ${mode})" \
+        || fail "$desc not world-readable — container UIDs will be locked out (mode ${mode})"
+}
+
+assert_world_executable() {
+    local path="$1" desc="$2"
+    local mode; mode=$(stat -c '%a' "$path" 2>/dev/null)
+    [[ $(( 8#$mode & 1 )) -eq 1 ]] \
+        && pass "$desc enterable (mode ${mode})" \
+        || fail "$desc not world-executable — MAS cannot enter directory (mode ${mode})"
+}
+
+assert_not_world_readable() {
+    local path="$1" desc="$2"
+    local mode; mode=$(stat -c '%a' "$path" 2>/dev/null)
+    [[ $(( 8#$mode & 4 )) -eq 0 ]] \
+        && pass "$desc not world-readable (mode ${mode})" \
+        || fail "$desc is world-readable — secrets exposed (mode ${mode})"
+}
+
+assert_owned_by() {
+    local path="$1" uid="$2" desc="$3"
+    local actual; actual=$(stat -c '%u' "$path" 2>/dev/null)
+    [[ "$actual" == "$uid" ]] \
+        && pass "$desc owned by uid ${uid}" \
+        || fail "$desc wrong owner: uid ${actual}, expected ${uid}"
+}
+
 # ─── Config-file assertions (no Docker needed) ────────────────────────────────
 assert_configs() {
     local server_name="$1"
@@ -151,6 +184,13 @@ assert_configs() {
     assert_file ".env" ".env generated"
     assert_contains ".env" "SERVER_NAME=${server_name}"          ".env → SERVER_NAME"
     assert_contains ".env" "MATRIX_DOMAIN=${matrix_domain}"      ".env → MATRIX_DOMAIN"
+    assert_not_world_readable ".env"                             ".env"
+
+    # Permissions — container UIDs must be able to read/write their data (regression: issue #21)
+    assert_world_executable "mas/config"             "mas/config/ dir"
+    assert_world_readable   "mas/config/config.yaml" "mas/config/config.yaml"
+    assert_owned_by         "mas/data"     "65532"   "mas/data/"
+    assert_owned_by         "synapse/data" "991"     "synapse/data/"
 
     # MAS config
     assert_file "mas/config/config.yaml" "mas/config/config.yaml generated"
@@ -495,6 +535,13 @@ assert_quickstart_configs() {
     assert_file ".env"                        ".env generated"
     assert_contains ".env" "DOMAIN=${domain}" ".env → DOMAIN"
     assert_contains ".env" "MATRIX_DOMAIN=${matrix_domain}" ".env → MATRIX_DOMAIN"
+    assert_not_world_readable ".env"          ".env"
+
+    # Permissions — container UIDs must be able to read/write their data (regression: issue #21)
+    assert_world_executable "mas/config"             "mas/config/ dir"
+    assert_world_readable   "mas/config/config.yaml" "mas/config/config.yaml"
+    assert_owned_by         "mas/data"     "65532"   "mas/data/"
+    assert_owned_by         "synapse/data" "991"     "synapse/data/"
 
     assert_file "mas/config/config.yaml"      "mas/config/config.yaml generated"
     assert_contains "mas/config/config.yaml"  "homeserver: '${matrix_domain}'"       "MAS → homeserver"
